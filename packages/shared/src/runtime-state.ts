@@ -440,6 +440,14 @@ const preferFinalContent = (finalValue: unknown, streamedValue: string): string 
   return streamedValue;
 };
 
+const joinStringArray = (value: unknown): string =>
+  Array.isArray(value)
+    ? value
+        .map((entry) => String(entry ?? "").trim())
+        .filter((entry) => entry.length > 0)
+        .join("\n\n")
+    : "";
+
 const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecord["aggregatedDeltas"]): string => {
   const itemType = item.type;
   if (itemType === "agentMessage") {
@@ -455,7 +463,7 @@ const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecor
     return String(item.text ?? "");
   }
   if (itemType === "reasoning") {
-    return JSON.stringify(item.summary ?? []);
+    return joinStringArray(item.content) || joinStringArray(item.summary);
   }
   return JSON.stringify(item, null, 2);
 };

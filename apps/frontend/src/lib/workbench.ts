@@ -50,6 +50,21 @@ export const extractItemBody = (item: ItemRecord): string => {
         .join("\n");
     }
   }
+  if (item.type === "reasoning") {
+    const content = Array.isArray(item.rawItem?.content)
+      ? item.rawItem.content.map((entry) => String(entry ?? "").trim()).filter((entry) => entry.length > 0).join("\n\n")
+      : "";
+    if (content) {
+      return content;
+    }
+
+    const summary = Array.isArray(item.rawItem?.summary)
+      ? item.rawItem.summary.map((entry) => String(entry ?? "").trim()).filter((entry) => entry.length > 0).join("\n\n")
+      : "";
+    if (summary) {
+      return summary;
+    }
+  }
   return item.renderedText || JSON.stringify(item.rawItem, null, 2);
 };
 
@@ -180,4 +195,3 @@ export const threadStats = (thread: ThreadRecord | null) => {
     unknownItems,
   };
 };
-
