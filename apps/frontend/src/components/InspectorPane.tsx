@@ -12,11 +12,13 @@ export const InspectorPane = ({
   enabled,
   onOpen,
   onClose,
+  isMobile = false,
 }: {
   open: boolean;
   enabled: boolean;
   onOpen: () => void;
   onClose: () => void;
+  isMobile?: boolean;
 }) => {
   const { snapshot, selectedItemId } = useRuntimeStore();
   const [tab, setTab] = useState<"runtime" | "item" | "thread" | "events" | "unknown">("runtime");
@@ -58,19 +60,12 @@ export const InspectorPane = ({
             </div>
           </div>
         </aside>
-
-        <button
-          className="ghost-btn fixed bottom-4 right-4 z-20 rounded-full px-4 py-2 text-sm lg:hidden"
-          onClick={onOpen}
-        >
-          Open Debug
-        </button>
       </>
     );
   }
 
   const paneBody = (
-    <div className="panel flex min-h-0 min-w-0 flex-col rounded-[28px] p-4">
+    <div className={`panel flex min-h-0 min-w-0 flex-col ${isMobile ? "h-full rounded-[24px] p-4" : "rounded-[28px] p-4"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] tracking-[0.18em] text-slate-500">Protocol Inspector</div>
@@ -84,11 +79,11 @@ export const InspectorPane = ({
         </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
         {(["runtime", "item", "thread", "events", "unknown"] as const).map((nextTab) => (
           <button
             key={nextTab}
-            className={`rounded-full px-3 py-1.5 text-xs transition ${tab === nextTab ? "primary-btn" : "ghost-btn"}`}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition ${tab === nextTab ? "primary-btn" : "ghost-btn"}`}
             onClick={() => setTab(nextTab)}
           >
             {nextTab}
@@ -145,7 +140,9 @@ export const InspectorPane = ({
   return (
     <>
       <aside className="hidden min-w-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col">{paneBody}</aside>
-      <div className="fixed inset-x-3 bottom-3 top-24 z-30 lg:hidden">{paneBody}</div>
+      <div className="fixed inset-0 z-40 bg-slate-950/70 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm lg:hidden">
+        <div className="h-full">{paneBody}</div>
+      </div>
     </>
   );
 };

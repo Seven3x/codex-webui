@@ -30,7 +30,7 @@ const isThreadNotFoundError = (error: unknown): boolean => {
   return normalized.includes("thread not found") || normalized.includes("no rollout found for thread id");
 };
 
-export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
+export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?: boolean; isMobile?: boolean }) => {
   const {
     snapshot,
     callAction,
@@ -315,9 +315,11 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
   const activeTurnId = selectedThread?.activeTurnId ?? null;
 
   return (
-    <footer className={`${embedded ? "surface-soft ring-1 ring-white/6" : "panel min-w-0"} rounded-[24px] p-4`}>
-      <div className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+    <footer
+      className={`${embedded ? "surface-soft ring-1 ring-white/6" : "panel min-w-0"} ${isMobile ? "rounded-[20px] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" : "rounded-[24px] p-4"}`}
+    >
+      <div className={isMobile ? "space-y-2.5" : "space-y-3"}>
+        <div className={isMobile ? "space-y-2" : "grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"}>
           <div className="space-y-2">
             <textarea
               value={text}
@@ -329,65 +331,87 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
                 }
               }}
               placeholder="Build something..."
-              className="min-h-[74px] w-full rounded-[20px] border border-white/8 bg-white/[0.025] px-4 py-3 text-[15px] leading-6"
+              className={`${isMobile ? "min-h-[56px] max-h-[32dvh] resize-none rounded-[18px] px-3.5 py-3 leading-5" : "min-h-[74px] rounded-[20px] px-4 py-3 leading-6"} w-full border border-white/8 bg-white/[0.025] text-[15px]`}
             />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{selectedThread ? "Reply in the current conversation" : "Send starts a new conversation"}</span>
+            <div className={`flex flex-wrap items-center gap-2 text-slate-500 ${isMobile ? "text-[11px]" : "text-xs"}`}>
+              <span>{selectedThread ? "Reply in this conversation" : "Send starts a new conversation"}</span>
               {activeTurnId && <span>{debug.debugMode ? `Active turn ${activeTurnId.slice(0, 8)}` : "Generating"}</span>}
             </div>
           </div>
 
-          <button
-            className="primary-btn rounded-full px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canSend}
-            onClick={() => void sendTurn()}
-          >
-            Send
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {debug.debugMode ? (
-              <>
-                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("model")}>
-                  {selectedModelMeta?.displayName || model || "Auto model"}
-                </button>
-                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("effort")}>
-                  {effort || selectedModelMeta?.defaultReasoningEffort || "Auto effort"}
-                </button>
-                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("approval")}>
-                  {approvalOptions.find((option) => option.value === approvalPolicy)?.label || "Approval"}
-                </button>
-                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("personality")}>
-                  {personalityOptions.find((option) => option.value === personality)?.label || "Style"}
-                </button>
-              </>
-            ) : null}
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => setShowControls((value) => !value)}>
-              {showControls ? "Hide controls" : "Controls"}
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {(showControls || debug.debugMode) && (
-              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
-                Steer
+          <div className={isMobile ? "flex items-center justify-end gap-2" : ""}>
+            {isMobile && (
+              <button className="ghost-btn rounded-full px-3 py-2 text-sm" onClick={() => setShowControls((value) => !value)}>
+                {showControls ? "Less" : "More"}
               </button>
             )}
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!activeTurnId} onClick={() => void interruptTurn()}>
-              Stop
+            <button
+              className={`primary-btn rounded-full disabled:cursor-not-allowed disabled:opacity-50 ${isMobile ? "px-4 py-3 text-sm font-semibold" : "px-5 py-3 text-sm font-semibold"}`}
+              disabled={!canSend}
+              onClick={() => void sendTurn()}
+            >
+              Send
             </button>
-            {(showControls || debug.debugMode) && (
-              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
-                Review
-              </button>
-            )}
           </div>
         </div>
+
+        {!isMobile && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {debug.debugMode ? (
+                <>
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("model")}>
+                    {selectedModelMeta?.displayName || model || "Auto model"}
+                  </button>
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("effort")}>
+                    {effort || selectedModelMeta?.defaultReasoningEffort || "Auto effort"}
+                  </button>
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("approval")}>
+                    {approvalOptions.find((option) => option.value === approvalPolicy)?.label || "Approval"}
+                  </button>
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("personality")}>
+                    {personalityOptions.find((option) => option.value === personality)?.label || "Style"}
+                  </button>
+                </>
+              ) : null}
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => setShowControls((value) => !value)}>
+                {showControls ? "Hide controls" : "Controls"}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {(showControls || debug.debugMode) && (
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
+                  Steer
+                </button>
+              )}
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!activeTurnId} onClick={() => void interruptTurn()}>
+                Stop
+              </button>
+              {(showControls || debug.debugMode) && (
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
+                  Review
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {showControls && (
-          <div className="grid gap-2 rounded-[20px] bg-white/[0.025] p-3 ring-1 ring-white/6 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]">
+          <div className={`rounded-[20px] bg-white/[0.025] p-3 ring-1 ring-white/6 ${isMobile ? "space-y-3" : "grid gap-2 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]"}`}>
+            {isMobile && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
+                  Steer
+                </button>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!activeTurnId} onClick={() => void interruptTurn()}>
+                  Stop
+                </button>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
+                  Review
+                </button>
+              </div>
+            )}
             <div className="min-w-0">
               <select
                 ref={modelRef}

@@ -25,6 +25,7 @@ html,
 body,
 #root {
   height: 100%;
+  min-width: 0;
 }
 
 body {
@@ -76,6 +77,7 @@ textarea::placeholder {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   backdrop-filter: blur(16px);
+  min-width: 0;
 }
 
 .surface-card {
@@ -136,6 +138,7 @@ textarea::placeholder {
 }
 
 .scrollbar {
+  min-width: 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(121, 131, 149, 0.45) transparent;
 }
@@ -151,10 +154,19 @@ textarea::placeholder {
 }
 
 .markdown-text {
+  min-width: 0;
+  max-width: 100%;
   color: var(--text);
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
   font-size: 15px;
   line-height: 1.78;
+}
+
+.assistant-message,
+.assistant-message > *,
+.markdown-text > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .markdown-text > * + * {
@@ -250,10 +262,32 @@ textarea::placeholder {
   overflow-x: auto;
   padding: 0.9rem 1rem;
   color: #e2e8f0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .markdown-code-block code {
   background: transparent;
   padding: 0;
   color: inherit;
+}
+
+@media (max-width: 1023px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  .markdown-text {
+    font-size: 14px;
+    line-height: 1.68;
+  }
+
+  .markdown-text > * + * {
+    margin-top: 0.72rem;
+  }
+
+  .markdown-code-block {
+    border-radius: 0.85rem;
+  }
 }

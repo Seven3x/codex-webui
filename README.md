@@ -111,10 +111,9 @@
 
 ### Frontend
 
-- 三栏布局：
-  - 左：Threads
-  - 中：Timeline + PTY terminal
-  - 右：Inspector / Raw Events
+- 响应式 workbench：
+  - 桌面端：左 `Threads`，中 `Conversation / Timeline`，右 `Inspector / Raw Events`
+  - 移动端：single-pane shell，在 `Threads / Conversation / Settings` 间切换；Debug UI 仅在 Debug Mode 下按需打开
 - 底部 composer 调用 `turn/start` / `turn/steer` / `turn/interrupt` / `review/start`
 - 不把 assistant bubble 当真相
 - 渲染单位是 `thread -> turn -> item`

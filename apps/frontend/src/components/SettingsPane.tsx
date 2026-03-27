@@ -143,7 +143,7 @@ const ToggleRow = ({
   </div>
 );
 
-export const SettingsPane = () => {
+export const SettingsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
   const { snapshot, socketState, selectedCwd, callAction, hydrate, debugPreferences, setDebugPreferences } = useRuntimeStore();
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [toolBusy, setToolBusy] = useState<string | null>(null);
@@ -254,8 +254,8 @@ export const SettingsPane = () => {
   };
 
   return (
-    <section className="panel min-w-0 rounded-3xl p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-      <div className="surface-soft rounded-3xl px-4 py-4">
+    <section className={`panel flex h-full min-w-0 min-h-0 flex-col ${isMobile ? "rounded-[24px] p-3.5" : "rounded-3xl p-4 lg:h-full lg:min-h-0"}`}>
+      <div className={`surface-soft ${isMobile ? "rounded-[22px] px-4 py-4" : "rounded-3xl px-4 py-4"}`}>
         <div className="text-xs uppercase tracking-[0.28em] text-slate-500">Settings / Dev Console</div>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -273,7 +273,7 @@ export const SettingsPane = () => {
         </div>
       </div>
 
-      <div className="scrollbar mt-4 space-y-4 pr-1 lg:flex-1 lg:overflow-y-auto">
+      <div className="scrollbar mt-4 min-h-0 flex-1 space-y-4 pr-1 overflow-y-auto">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Threads" value={threads.length} detail={`${totals.loaded} loaded / ${totals.resumed} resumed / ${totals.unloaded} unloaded`} />
           <StatCard label="Active Turns" value={totals.activeTurns} detail={snapshot.selectedThreadId ? `selected ${compactIdentifier(snapshot.selectedThreadId)}` : "no selected thread"} />

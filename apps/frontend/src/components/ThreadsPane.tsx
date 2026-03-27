@@ -59,7 +59,7 @@ const matchesSearch = (
   return haystack.includes(searchTerm.toLowerCase());
 };
 
-export const ThreadsPane = () => {
+export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
   const { snapshot, selectThread, callAction, selectedCwd, setSelectedCwd, debugPreferences } = useRuntimeStore();
   const debug = useMemo(() => resolveDebugPreferences(debugPreferences), [debugPreferences]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -211,15 +211,15 @@ export const ThreadsPane = () => {
   };
 
   return (
-    <aside className="panel min-w-0 rounded-[30px] p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+    <aside className={`panel flex h-full min-w-0 min-h-0 flex-col ${isMobile ? "rounded-[24px] p-3.5" : "rounded-[30px] p-4 lg:h-full lg:min-h-0"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] tracking-[0.18em] text-slate-500">Threads</div>
-          <h2 className="mt-1 text-lg font-semibold text-slate-50">Conversation list</h2>
-          <p className="mt-1 text-xs text-slate-500">Compact threads grouped by workspace</p>
+          <h2 className={`mt-1 font-semibold text-slate-50 ${isMobile ? "text-xl" : "text-lg"}`}>Conversation list</h2>
+          <p className="mt-1 text-xs text-slate-500">{isMobile ? "Search, filter and jump back into a conversation." : "Compact threads grouped by workspace"}</p>
         </div>
         <button
-          className="primary-btn rounded-full px-3 py-1.5 text-xs font-medium"
+          className={`primary-btn rounded-full font-medium ${isMobile ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
           onClick={() =>
             void runThreadAction<{ thread: { id: string } }>(
               "thread.start",
@@ -247,13 +247,13 @@ export const ThreadsPane = () => {
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
           placeholder="Search threads"
-          className="surface-soft w-full rounded-[18px] px-3 py-2 text-sm"
+          className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
         />
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className={`grid gap-2 ${isMobile ? "grid-cols-1" : "md:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <select
             value={selectedCwd}
             onChange={(event) => setSelectedCwd(event.target.value)}
-            className="surface-soft w-full rounded-[18px] px-3 py-2 text-sm"
+            className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
           >
             <option value="">All workspaces</option>
             {cwdOptions.map((cwd) => (
@@ -262,11 +262,11 @@ export const ThreadsPane = () => {
               </option>
             ))}
           </select>
-          <button className="ghost-btn rounded-[18px] px-3 py-2 text-xs" onClick={() => void fetchThreads()}>
+          <button className={`ghost-btn rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"}`} onClick={() => void fetchThreads()}>
             Refresh
           </button>
           <button
-            className={`rounded-[18px] px-3 py-2 text-xs ${showArchived ? "bg-rose-500/12 text-rose-200 ring-1 ring-rose-400/20" : "ghost-btn"}`}
+            className={`rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"} ${showArchived ? "bg-rose-500/12 text-rose-200 ring-1 ring-rose-400/20" : "ghost-btn"}`}
             onClick={() => setShowArchived((value) => !value)}
           >
             Archived
@@ -284,7 +284,7 @@ export const ThreadsPane = () => {
         <span>{showArchived ? "Archive view" : "Active view"}</span>
       </div>
 
-      <div className="scrollbar mt-3 space-y-4 pr-1 lg:flex-1 lg:overflow-y-auto">
+      <div className="scrollbar mt-3 min-h-0 flex-1 space-y-4 pr-1 overflow-y-auto">
         {groupedThreads.map(([cwdLabel, items]) => (
           <section key={cwdLabel} className="space-y-2">
             {!selectedCwd && (
@@ -311,39 +311,39 @@ export const ThreadsPane = () => {
                 >
                   <div className="flex items-start gap-2">
                     <button
-                      className="block min-w-0 flex-1 rounded-[18px] px-3 py-2.5 text-left"
+                      className={`block min-w-0 flex-1 rounded-[18px] text-left ${isMobile ? "px-3.5 py-3.5" : "px-3 py-2.5"}`}
                       title={thread.id}
                       onClick={() => openThread(thread.id)}
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-[13px] font-medium text-slate-100">{threadTitle(thread)}</div>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-400">{threadPreview(thread)}</p>
+                        <div className={`truncate font-medium text-slate-100 ${isMobile ? "text-[14px]" : "text-[13px]"}`}>{threadTitle(thread)}</div>
+                        <p className={`mt-0.5 truncate text-slate-400 ${isMobile ? "text-[12px]" : "text-[11px]"}`}>{threadPreview(thread)}</p>
                         <div className="mt-1 truncate text-[10px] text-slate-500">{metaBits.join(" • ") || (thread.cwd ?? "No workspace")}</div>
                       </div>
                     </button>
 
-                    <details className="relative mr-2 mt-2 shrink-0">
+                    <details className={`relative shrink-0 ${isMobile ? "mr-2 mt-2.5" : "mr-2 mt-2"}`}>
                       <summary
-                        className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full text-sm text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200"
+                        className={`flex cursor-pointer list-none items-center justify-center rounded-full text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200 ${isMobile ? "h-9 w-9 text-base" : "h-7 w-7 text-sm"}`}
                         onClick={(event) => event.stopPropagation()}
                       >
                         ...
                       </summary>
                       <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
-                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => openThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => openThread(thread.id)}>
                           Read
                         </button>
-                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void resumeThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void resumeThread(thread.id)}>
                           Resume
                         </button>
-                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void forkThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void forkThread(thread.id)}>
                           Fork
                         </button>
-                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void archiveThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void archiveThread(thread.id)}>
                           Archive
                         </button>
                         {debug.showRawEventControls && (
-                          <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void exportThreadEvents(thread.id)}>
+                          <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void exportThreadEvents(thread.id)}>
                             Export
                           </button>
                         )}
@@ -361,7 +361,7 @@ export const ThreadsPane = () => {
 
       <button
         disabled={!cursor || loading}
-        className="ghost-btn mt-4 rounded-[18px] px-3 py-2 text-xs disabled:opacity-50"
+        className={`ghost-btn mt-4 rounded-[18px] disabled:opacity-50 ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"}`}
         onClick={() => void fetchThreads(cursor)}
       >
         {loading ? "Loading..." : cursor ? "Load more" : "No more threads"}

@@ -114,9 +114,6 @@ const runtimeWebSocketUrl = (): string => {
   if (typeof window === "undefined") {
     return "ws://127.0.0.1:8787/ws";
   }
-  if (import.meta.env.DEV) {
-    return "ws://127.0.0.1:8787/ws";
-  }
   return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
 };
 

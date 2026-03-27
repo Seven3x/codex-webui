@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: ["frp-mix.com"],
     fs: {
       allow: [resolve(__dirname, "../..")],
     },

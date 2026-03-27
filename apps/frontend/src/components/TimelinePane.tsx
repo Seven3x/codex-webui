@@ -125,6 +125,44 @@ const DebugActionButton = ({ onClick, label }: { onClick: () => void; label: str
   </button>
 );
 
+const ThreadActionMenu = ({
+  onResume,
+  onFork,
+  onArchive,
+  onExport,
+  compact = false,
+}: {
+  onResume: () => void;
+  onFork: () => void;
+  onArchive: () => void;
+  onExport?: () => void;
+  compact?: boolean;
+}) => (
+  <details className="relative shrink-0">
+    <summary
+      className={`flex cursor-pointer list-none items-center justify-center rounded-full text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-100 ${compact ? "h-9 w-9 text-base" : "h-8 w-8 text-sm"}`}
+    >
+      ...
+    </summary>
+    <div className="absolute right-0 top-10 z-20 flex min-w-[152px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
+      <button className={`ghost-btn rounded-[12px] text-left ${compact ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={onResume}>
+        Resume
+      </button>
+      <button className={`ghost-btn rounded-[12px] text-left ${compact ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={onFork}>
+        Fork
+      </button>
+      <button className={`ghost-btn rounded-[12px] text-left ${compact ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={onArchive}>
+        Archive
+      </button>
+      {onExport && (
+        <button className={`ghost-btn rounded-[12px] text-left ${compact ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={onExport}>
+          Export
+        </button>
+      )}
+    </div>
+  </details>
+);
+
 const DebugBadges = ({
   item,
   debug,
@@ -220,7 +258,7 @@ const UserMessage = ({
   onInspectItem: (itemId: string) => void;
 }) => (
   <div className="flex justify-end">
-    <article className="max-w-[82%] rounded-[20px] bg-white/[0.045] px-3.5 py-3 ring-1 ring-white/[0.06]">
+    <article className="max-w-[90%] rounded-[18px] bg-white/[0.045] px-3 py-2.5 ring-1 ring-white/[0.06] lg:max-w-[82%] lg:rounded-[20px] lg:px-3.5 lg:py-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">You</span>
         <div className="flex items-center gap-2">
@@ -256,7 +294,7 @@ const AssistantMessage = ({
           {debug.showInspectControls && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
         </div>
       </div>
-      <div className="break-words text-[15px] leading-7 text-slate-100">
+      <div className="break-words text-[15px] leading-6 text-slate-100 lg:leading-7">
         <MarkdownText text={extractItemBody(item)} className="assistant-message" />
         {running && <StreamingCursor />}
       </div>
@@ -337,7 +375,7 @@ const CommandCluster = ({
           {items.map((item) => (
             <div key={item.id} className="space-y-2 rounded-[16px] bg-black/10 px-3 py-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="font-mono text-sm text-slate-100">{commandText(item)}</div>
+                <div className="min-w-0 break-all font-mono text-sm text-slate-100">{commandText(item)}</div>
                 <div className="flex items-center gap-2">
                   <MetaBadge>{itemSummary(item)}</MetaBadge>
                   {debug.showInspectControls && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
@@ -621,7 +659,7 @@ const WorkbenchGroupView = ({
 const OptimisticTurnEntry = ({ optimisticTurn }: { optimisticTurn: OptimisticTurn }) => (
   <section className="space-y-4">
     <div className="flex justify-end">
-      <article className="max-w-[82%] rounded-[20px] bg-white/[0.045] px-3.5 py-3 ring-1 ring-white/[0.06]">
+      <article className="max-w-[90%] rounded-[18px] bg-white/[0.045] px-3 py-2.5 ring-1 ring-white/[0.06] lg:max-w-[82%] lg:rounded-[20px] lg:px-3.5 lg:py-3">
         <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">You</div>
         <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-[15px] leading-6 text-slate-50">{optimisticTurn.userText}</pre>
       </article>
@@ -657,7 +695,7 @@ const TurnStream = ({
       {debug.showTurnBoundaries && <TurnDivider turn={turn} turnIndex={turnIndex} />}
       {showOptimisticUser && (
         <div className="flex justify-end">
-          <article className="max-w-[82%] rounded-[20px] bg-white/[0.045] px-3.5 py-3 ring-1 ring-white/[0.06]">
+          <article className="max-w-[90%] rounded-[18px] bg-white/[0.045] px-3 py-2.5 ring-1 ring-white/[0.06] lg:max-w-[82%] lg:rounded-[20px] lg:px-3.5 lg:py-3">
             <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">You</div>
             <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-[15px] leading-6 text-slate-50">{optimisticTurn?.userText}</pre>
           </article>
@@ -774,14 +812,18 @@ export const TimelinePane = ({
   inspectorOpen,
   onOpenInspector,
   onCloseInspector,
+  isMobile = false,
+  onBackToThreads,
 }: {
   routeThreadId?: string | null;
   debug: ResolvedDebugPreferences;
   inspectorOpen: boolean;
   onOpenInspector: () => void;
   onCloseInspector: () => void;
+  isMobile?: boolean;
+  onBackToThreads?: () => void;
 }) => {
-  const { snapshot, callAction, optimisticTurns, selectItem } = useRuntimeStore();
+  const { snapshot, callAction, optimisticTurns, selectItem, selectThread } = useRuntimeStore();
   const thread = snapshot.selectedThreadId ? snapshot.threads[snapshot.selectedThreadId] : null;
   const [showTerminal, setShowTerminal] = useState(false);
   const [followOutput, setFollowOutput] = useState(true);
@@ -839,30 +881,95 @@ export const TimelinePane = ({
     onOpenInspector();
   };
 
+  const resumeCurrentThread = async () => {
+    if (!thread) {
+      return;
+    }
+    const response = await callAction<{ thread: { id: string } }>("thread.resume", {
+      threadId: thread.id,
+      persistExtendedHistory: true,
+    });
+    const nextThreadId = response.thread.id;
+    selectThread(nextThreadId);
+    navigateToRoute({ name: "thread", threadId: nextThreadId });
+  };
+
+  const forkCurrentThread = async () => {
+    if (!thread) {
+      return;
+    }
+    const response = await callAction<{ thread?: { id?: string } }>("thread.fork", {
+      threadId: thread.id,
+      persistExtendedHistory: true,
+    });
+    const nextThreadId = String(response.thread?.id ?? "");
+    if (!nextThreadId) {
+      return;
+    }
+    selectThread(nextThreadId);
+    navigateToRoute({ name: "thread", threadId: nextThreadId });
+  };
+
+  const archiveCurrentThread = async () => {
+    if (!thread) {
+      return;
+    }
+    await callAction("thread.archive", {
+      threadId: thread.id,
+    });
+    if (isMobile) {
+      onBackToThreads?.();
+    }
+  };
+
   if (!thread) {
     return (
-      <section className="panel min-w-0 rounded-[30px] p-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <section className={`panel flex h-full min-w-0 min-h-0 flex-col ${isMobile ? "rounded-[24px] p-4" : "rounded-[30px] p-6 lg:h-full lg:min-h-0"}`}>
         <div className="mx-auto w-full max-w-[860px] space-y-4">
-          <div className="note-panel rounded-[22px] p-6 text-sm">
+          <div className={`note-panel text-sm ${isMobile ? "rounded-[18px] p-4" : "rounded-[22px] p-6"}`}>
             {routeThreadId
               ? `Route points to thread ${routeThreadId}, but it is not loaded in the local projection yet. Use thread/read or resume it before relying on local history.`
               : "Select a thread from the left column to enter the conversation. Debug controls stay hidden until Debug Mode is enabled in Settings."}
           </div>
-          {routeThreadId && <ComposerBar embedded />}
+          {routeThreadId && <ComposerBar embedded isMobile={isMobile} />}
         </div>
       </section>
     );
   }
 
   return (
-    <section className="panel min-w-0 rounded-[30px] p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-      <div className="mx-auto w-full max-w-[920px] border-b border-white/6 px-1 pb-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <div className="text-[11px] tracking-[0.18em] text-slate-500">Conversation</div>
-            <h2 className="mt-1 break-words text-[28px] font-semibold tracking-tight text-slate-50">{threadTitle(thread)}</h2>
-            <p className="mt-2 truncate text-sm text-slate-500">{thread.cwd || "No working directory"}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+    <section className={`panel flex h-full min-w-0 min-h-0 flex-col ${isMobile ? "rounded-[24px] p-3.5" : "rounded-[30px] p-4 lg:h-full lg:min-h-0"}`}>
+      <div className={`mx-auto w-full max-w-[920px] border-b border-white/6 ${isMobile ? "px-0 pb-3" : "px-1 pb-4"}`}>
+        {isMobile ? (
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] tracking-[0.18em] text-slate-500">Conversation</div>
+                <h2 className="mt-1 break-words text-[22px] font-semibold tracking-tight text-slate-50">{threadTitle(thread)}</h2>
+                <p className="mt-1 truncate text-[13px] text-slate-500">{thread.cwd || "No working directory"}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {onBackToThreads && (
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={onBackToThreads}>
+                    Back
+                  </button>
+                )}
+                {debug.debugMode && (
+                  <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={inspectorOpen ? onCloseInspector : onOpenInspector}>
+                    {inspectorOpen ? "Hide Debug" : "Debug"}
+                  </button>
+                )}
+                <ThreadActionMenu
+                  compact
+                  onResume={() => void resumeCurrentThread()}
+                  onFork={() => void forkCurrentThread()}
+                  onArchive={() => void archiveCurrentThread()}
+                  onExport={debug.showRawEventControls ? () => void exportThreadEvents(thread.id) : undefined}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-400">
               <span>{`${stats.turns} turns`}</span>
               <span className="text-slate-600">/</span>
               <span>{`${stats.items} items`}</span>
@@ -876,57 +983,50 @@ export const TimelinePane = ({
               {debug.showTurnBoundaries && <MetaBadge>{thread.status}</MetaBadge>}
             </div>
           </div>
+        ) : (
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="text-[11px] tracking-[0.18em] text-slate-500">Conversation</div>
+              <h2 className="mt-1 break-words text-[28px] font-semibold tracking-tight text-slate-50">{threadTitle(thread)}</h2>
+              <p className="mt-2 truncate text-sm text-slate-500">{thread.cwd || "No working directory"}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                <span>{`${stats.turns} turns`}</span>
+                <span className="text-slate-600">/</span>
+                <span>{`${stats.items} items`}</span>
+                {stats.approvals > 0 && (
+                  <>
+                    <span className="text-slate-600">/</span>
+                    <span>{`${stats.approvals} approvals`}</span>
+                  </>
+                )}
+                {thread.activeTurnId && <RunningBadge label="Generating" />}
+                {debug.showTurnBoundaries && <MetaBadge>{thread.status}</MetaBadge>}
+              </div>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {debug.debugMode && (
-              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={inspectorOpen ? onCloseInspector : onOpenInspector}>
-                {inspectorOpen ? "Hide Debug" : "Open Debug"}
+            <div className="flex flex-wrap items-center gap-2">
+              {debug.debugMode && (
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={inspectorOpen ? onCloseInspector : onOpenInspector}>
+                  {inspectorOpen ? "Hide Debug" : "Open Debug"}
+                </button>
+              )}
+              {debug.showRawEventControls && (
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void exportThreadEvents(thread.id)}>
+                  Export
+                </button>
+              )}
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void resumeCurrentThread()}>
+                Resume
               </button>
-            )}
-            {debug.showRawEventControls && (
-              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void exportThreadEvents(thread.id)}>
-                Export
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void forkCurrentThread()}>
+                Fork
               </button>
-            )}
-            <button
-              className="ghost-btn rounded-full px-3 py-1.5 text-xs"
-              onClick={() =>
-                void callAction("thread.resume", {
-                  threadId: thread.id,
-                  persistExtendedHistory: true,
-                })
-              }
-            >
-              Resume
-            </button>
-            <button
-              className="ghost-btn rounded-full px-3 py-1.5 text-xs"
-              onClick={() =>
-                void callAction<{ thread?: { id?: string } }>("thread.fork", {
-                  threadId: thread.id,
-                  persistExtendedHistory: true,
-                }).then((response) => {
-                  const nextThreadId = String(response.thread?.id ?? "");
-                  if (nextThreadId) {
-                    navigateToRoute({ name: "thread", threadId: nextThreadId });
-                  }
-                })
-              }
-            >
-              Fork
-            </button>
-            <button
-              className="ghost-btn rounded-full px-3 py-1.5 text-xs"
-              onClick={() =>
-                void callAction("thread.archive", {
-                  threadId: thread.id,
-                })
-              }
-            >
-              Archive
-            </button>
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void archiveCurrentThread()}>
+                Archive
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div
@@ -938,9 +1038,9 @@ export const TimelinePane = ({
           }
           setFollowOutput(element.scrollHeight - element.scrollTop - element.clientHeight < 120);
         }}
-        className="scrollbar min-h-0 pr-1 pt-4 lg:flex-1 lg:overflow-y-auto"
+        className={`scrollbar min-h-0 flex-1 overflow-y-auto pr-1 ${isMobile ? "pt-3" : "pt-4"}`}
       >
-        <div className="mx-auto flex max-w-[920px] flex-col gap-6 pb-2">
+        <div className={`mx-auto flex max-w-[920px] flex-col ${isMobile ? "gap-4 pb-3" : "gap-6 pb-2"}`}>
           {thread.turnOrder.length === 0 && standaloneOptimisticTurns.length === 0 && (
             <div className="note-panel rounded-[18px] p-5 text-sm">History not loaded. Use `thread/read` or `thread/resume`.</div>
           )}
@@ -967,9 +1067,9 @@ export const TimelinePane = ({
         </div>
       </div>
 
-      <div className="mx-auto mt-4 w-full max-w-[920px] space-y-3 border-t border-white/6 pt-4">
-        <ComposerBar embedded />
-        {debug.debugMode && (
+      <div className={`mx-auto w-full max-w-[920px] border-t border-white/6 ${isMobile ? "mt-3 pt-3" : "mt-4 pt-4"}`}>
+        <ComposerBar embedded isMobile={isMobile} />
+        {debug.debugMode && !isMobile && (
           <div className="rounded-[18px] bg-white/[0.02] px-4 py-3 ring-1 ring-white/6">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm text-slate-400">Protocol terminal</div>
