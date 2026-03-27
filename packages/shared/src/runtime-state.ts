@@ -433,17 +433,23 @@ const ensureTurnRecord = (thread: ThreadRecord, turnId: string): TurnRecord => {
   return created;
 };
 
+const preferFinalContent = (finalValue: unknown, streamedValue: string): string => {
+  if (typeof finalValue === "string" && finalValue.length > 0) {
+    return finalValue;
+  }
+  return streamedValue;
+};
+
 const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecord["aggregatedDeltas"]): string => {
   const itemType = item.type;
   if (itemType === "agentMessage") {
-    return String(item.text ?? "") + aggregated.agentText;
+    return preferFinalContent(item.text, aggregated.agentText);
   }
   if (itemType === "commandExecution") {
-    const base = item.aggregatedOutput;
-    return String(base ?? "") + aggregated.commandOutput;
+    return preferFinalContent(item.aggregatedOutput, aggregated.commandOutput);
   }
   if (itemType === "fileChange") {
-    return aggregated.fileChangeOutput;
+    return preferFinalContent(item.output, aggregated.fileChangeOutput);
   }
   if (itemType === "plan") {
     return String(item.text ?? "");
@@ -454,13 +460,87 @@ const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecor
   return JSON.stringify(item, null, 2);
 };
 
+const itemIdentitySignature = (rawItem: Record<string, unknown>): string => {
+  const type = String(rawItem.type ?? "unknown");
+
+  if (type === "userMessage") {
+    return `${type}:${JSON.stringify(rawItem.content ?? null)}`;
+  }
+  if (type === "agentMessage") {
+    return `${type}:${String(rawItem.text ?? "")}`;
+  }
+  if (type === "commandExecution") {
+    return `${type}:${String(rawItem.command ?? "")}`;
+  }
+  if (type === "fileChange") {
+    return `${type}:${String(rawItem.output ?? "")}:${JSON.stringify(rawItem.changes ?? null)}`;
+  }
+
+  return `${type}:${JSON.stringify(rawItem)}`;
+};
+
+const isProvisionalItemId = (value: string): boolean => /^item-\d+$/.test(value) || value.startsWith("generated-");
+
+const resolveAnonymousItemId = (turn: TurnRecord, rawItem: Record<string, unknown>): string | null => {
+  const incomingType = String(rawItem.type ?? "unknown");
+  const incomingSignature = itemIdentitySignature(rawItem);
+
+  for (const itemId of turn.itemOrder) {
+    const existing = turn.items[itemId];
+    if (!existing || existing.type !== incomingType || existing.rawItem?.id !== undefined) {
+      continue;
+    }
+    if (existing.rawItem && itemIdentitySignature(existing.rawItem) === incomingSignature) {
+      return existing.id;
+    }
+  }
+
+  return null;
+};
+
+const resolveExistingItemId = (turn: TurnRecord, rawItem: Record<string, unknown>): string | null => {
+  const incomingId = rawItem.id !== undefined ? String(rawItem.id) : null;
+  if (incomingId && turn.items[incomingId]) {
+    return incomingId;
+  }
+
+  const incomingType = String(rawItem.type ?? "unknown");
+  const incomingSignature = itemIdentitySignature(rawItem);
+
+  for (const itemId of turn.itemOrder) {
+    const existing = turn.items[itemId];
+    if (!existing || existing.type !== incomingType || !existing.rawItem) {
+      continue;
+    }
+    if (itemIdentitySignature(existing.rawItem) !== incomingSignature) {
+      continue;
+    }
+
+    const existingRawId = existing.rawItem.id !== undefined ? String(existing.rawItem.id) : null;
+    if (!incomingId || !existingRawId) {
+      return existing.id;
+    }
+    if (existingRawId === incomingId) {
+      return existing.id;
+    }
+    if (isProvisionalItemId(existingRawId) || isProvisionalItemId(incomingId)) {
+      return existing.id;
+    }
+  }
+
+  return incomingId;
+};
+
 const upsertItem = (
   turn: TurnRecord,
   rawItem: Record<string, unknown>,
   timestamp: number | null,
   completed: boolean,
 ): ItemRecord => {
-  const id = String(rawItem.id ?? `generated-${Date.now()}-${turn.itemOrder.length + 1}`);
+  const id =
+    resolveExistingItemId(turn, rawItem) ??
+    resolveAnonymousItemId(turn, rawItem) ??
+    `generated-${Date.now()}-${turn.itemOrder.length + 1}`;
   const existing = turn.items[id];
   const type = String(rawItem.type ?? "unknown");
   const next: ItemRecord = existing
