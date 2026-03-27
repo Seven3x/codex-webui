@@ -8,6 +8,8 @@ import type {
 } from "../../../generated/codex-schema";
 import type {
   AgentMessageDeltaNotification,
+  ConfigReadParams,
+  ConfigReadResponse,
   CommandExecOutputDeltaNotification,
   CommandExecParams,
   CommandExecResizeParams,
@@ -24,8 +26,12 @@ import type {
   FileChangeRequestApprovalResponse,
   ItemCompletedNotification,
   ItemStartedNotification,
+  Model,
+  ModelListParams,
+  ModelListResponse,
   ReviewStartParams,
   ReviewStartResponse,
+  AskForApproval,
   ServerRequestResolvedNotification,
   SkillsChangedNotification,
   Thread,
@@ -52,10 +58,15 @@ import type {
   TurnSteerParams,
   TurnSteerResponse,
 } from "../../../generated/codex-schema/v2";
+import type { Personality } from "../../../generated/codex-schema/Personality";
+import type { ReasoningEffort } from "../../../generated/codex-schema/ReasoningEffort";
 
 export type { ClientNotification, ClientRequest, InitializeParams, InitializeResponse, ServerNotification, ServerRequest };
 export type {
   AgentMessageDeltaNotification,
+  AskForApproval,
+  ConfigReadParams,
+  ConfigReadResponse,
   CommandExecOutputDeltaNotification,
   CommandExecParams,
   CommandExecResizeParams,
@@ -72,6 +83,11 @@ export type {
   FileChangeRequestApprovalResponse,
   ItemCompletedNotification,
   ItemStartedNotification,
+  Model,
+  ModelListParams,
+  ModelListResponse,
+  Personality,
+  ReasoningEffort,
   ReviewStartParams,
   ReviewStartResponse,
   ServerRequestResolvedNotification,
@@ -109,6 +125,8 @@ export type AppServerRequestMap = {
   "thread/resume": { params: ThreadResumeParams; result: ThreadResumeResponse };
   "thread/fork": { params: ThreadForkParams; result: ThreadForkResponse };
   "thread/archive": { params: ThreadArchiveParams; result: ThreadArchiveResponse };
+  "model/list": { params: ModelListParams; result: ModelListResponse };
+  "config/read": { params: ConfigReadParams; result: ConfigReadResponse };
   "turn/start": { params: TurnStartParams; result: TurnStartResponse };
   "turn/steer": { params: TurnSteerParams; result: TurnSteerResponse };
   "turn/interrupt": { params: TurnInterruptParams; result: TurnInterruptResponse };
@@ -158,4 +176,3 @@ export const STREAMING_NOTIFICATION_METHODS = new Set([
   "item/fileChange/outputDelta",
   "command/exec/outputDelta",
 ]);
-

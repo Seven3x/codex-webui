@@ -191,6 +191,11 @@ export interface ThreadStatusEvent {
   status: string;
 }
 
+export interface ThreadRemovedEvent {
+  type: "thread/removed";
+  threadId: string;
+}
+
 export interface TurnMergedEvent {
   type: "turn/merged";
   threadId: string;
@@ -278,6 +283,7 @@ export type RuntimeEvent =
   | ThreadMergedEvent
   | ThreadSelectedEvent
   | ThreadStatusEvent
+  | ThreadRemovedEvent
   | TurnMergedEvent
   | ItemStartedEventShape
   | ItemCompletedEventShape
@@ -575,6 +581,17 @@ export const reduceRuntimeEvent = (snapshot: RuntimeSnapshot, event: RuntimeEven
       if (thread) {
         thread.status = event.status;
         thread.archived = event.status === "archived" ? true : thread.archived;
+      }
+      return next;
+    }
+    case "thread/removed": {
+      if (next.threads[event.threadId]) {
+        delete next.threads[event.threadId];
+      }
+      next.threadOrder = next.threadOrder.filter((threadId) => threadId !== event.threadId);
+      if (next.selectedThreadId === event.threadId) {
+        next.selectedThreadId = null;
+        next.selectedItemId = null;
       }
       return next;
     }

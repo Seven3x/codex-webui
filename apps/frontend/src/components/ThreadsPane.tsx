@@ -49,6 +49,7 @@ export const ThreadsPane = () => {
   const [showArchived, setShowArchived] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const cwdOptions = useMemo(
     () =>
@@ -118,6 +119,23 @@ export const ThreadsPane = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const runThreadAction = async <T,>(
+    action: string,
+    payload: Record<string, unknown>,
+    onSuccess?: (result: T) => void,
+    successMessage?: string,
+  ): Promise<void> => {
+    try {
+      const result = await callAction<T>(action, payload);
+      if (successMessage) {
+        setActionMessage(successMessage);
+      }
+      onSuccess?.(result);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   return (
     <aside className="panel min-w-0 rounded-3xl p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
       <div className="mb-4 flex items-center justify-between">
@@ -127,17 +145,23 @@ export const ThreadsPane = () => {
         </div>
         <button
           className="primary-btn rounded-full px-3 py-1 text-xs font-medium"
-          onClick={async () => {
-            const response = await callAction<{ thread: { id: string } }>("thread.start", {
-              cwd: selectedCwd || null,
-              approvalPolicy: "on-request",
-              personality: "pragmatic",
-              experimentalRawEvents: true,
-              persistExtendedHistory: true,
-            });
-            selectThread(response.thread.id);
-            navigateToRoute({ name: "thread", threadId: response.thread.id });
-          }}
+          onClick={() =>
+            void runThreadAction<{ thread: { id: string } }>(
+              "thread.start",
+              {
+                cwd: selectedCwd || null,
+                approvalPolicy: "on-request",
+                personality: "pragmatic",
+                experimentalRawEvents: true,
+                persistExtendedHistory: true,
+              },
+              (response) => {
+                selectThread(response.thread.id);
+                navigateToRoute({ name: "thread", threadId: response.thread.id });
+              },
+              "Started a new thread.",
+            )
+          }
         >
           New Thread
         </button>
@@ -176,6 +200,11 @@ export const ThreadsPane = () => {
             Archived
           </button>
         </div>
+        {actionMessage && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
+            {actionMessage}
+          </div>
+        )}
       </div>
 
       <div className="scrollbar mt-4 space-y-3 pr-1 lg:flex-1 lg:overflow-y-auto">
@@ -223,13 +252,18 @@ export const ThreadsPane = () => {
                   <button
                     className="ghost-btn rounded-full px-2 py-1 text-[11px]"
                     onClick={() =>
-                      void callAction("thread.read", {
-                        threadId: thread.id,
-                        includeTurns: true,
-                      }).then(() => {
-                        selectThread(thread.id);
-                        navigateToRoute({ name: "thread", threadId: thread.id });
-                      })
+                      void runThreadAction(
+                        "thread.read",
+                        {
+                          threadId: thread.id,
+                          includeTurns: true,
+                        },
+                        () => {
+                          selectThread(thread.id);
+                          navigateToRoute({ name: "thread", threadId: thread.id });
+                        },
+                        "Loaded thread history.",
+                      )
                     }
                   >
                     Read
@@ -237,13 +271,18 @@ export const ThreadsPane = () => {
                   <button
                     className="ghost-btn rounded-full px-2 py-1 text-[11px]"
                     onClick={() =>
-                      void callAction("thread.resume", {
-                        threadId: thread.id,
-                        persistExtendedHistory: true,
-                      }).then(() => {
-                        selectThread(thread.id);
-                        navigateToRoute({ name: "thread", threadId: thread.id });
-                      })
+                      void runThreadAction<{ thread: { id: string } }>(
+                        "thread.resume",
+                        {
+                          threadId: thread.id,
+                          persistExtendedHistory: true,
+                        },
+                        (response) => {
+                          selectThread(response.thread.id);
+                          navigateToRoute({ name: "thread", threadId: response.thread.id });
+                        },
+                        "Thread resumed and ready for new turns.",
+                      )
                     }
                   >
                     Resume
@@ -251,18 +290,21 @@ export const ThreadsPane = () => {
                   <button
                     className="ghost-btn rounded-full px-2 py-1 text-[11px]"
                     onClick={() =>
-                      void callAction("thread.fork", {
-                        threadId: thread.id,
-                        persistExtendedHistory: true,
-                      }).then((response) => {
-                        const nextThreadId = typeof response === "object" && response && "thread" in response
-                          ? String((response as { thread?: { id?: string } }).thread?.id ?? "")
-                          : "";
-                        if (nextThreadId) {
-                          selectThread(nextThreadId);
-                          navigateToRoute({ name: "thread", threadId: nextThreadId });
-                        }
-                      })
+                      void runThreadAction<{ thread?: { id?: string } }>(
+                        "thread.fork",
+                        {
+                          threadId: thread.id,
+                          persistExtendedHistory: true,
+                        },
+                        (response) => {
+                          const nextThreadId = String(response.thread?.id ?? "");
+                          if (nextThreadId) {
+                            selectThread(nextThreadId);
+                            navigateToRoute({ name: "thread", threadId: nextThreadId });
+                          }
+                        },
+                        "Forked thread into a new working copy.",
+                      )
                     }
                   >
                     Fork
@@ -270,9 +312,14 @@ export const ThreadsPane = () => {
                   <button
                     className="ghost-btn rounded-full px-2 py-1 text-[11px]"
                     onClick={() =>
-                      void callAction("thread.archive", {
-                        threadId: thread.id,
-                      })
+                      void runThreadAction(
+                        "thread.archive",
+                        {
+                          threadId: thread.id,
+                        },
+                        undefined,
+                        "Archived thread.",
+                      )
                     }
                   >
                     Archive

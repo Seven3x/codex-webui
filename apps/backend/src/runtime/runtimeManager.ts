@@ -103,6 +103,10 @@ export class RuntimeManager {
         });
       case "thread.archive":
         return this.request("thread/archive", payload as AppServerRequestMap["thread/archive"]["params"]);
+      case "model.list":
+        return this.request("model/list", payload as AppServerRequestMap["model/list"]["params"]);
+      case "config.read":
+        return this.request("config/read", payload as AppServerRequestMap["config/read"]["params"]);
       case "turn.start":
         return this.request("turn/start", payload as AppServerRequestMap["turn/start"]["params"]);
       case "turn.steer":
@@ -269,6 +273,13 @@ export class RuntimeManager {
           threadId: this.snapshot.selectedThreadId,
           error: error instanceof Error ? error.message : String(error),
         });
+        this.applyEvents([
+          { type: "thread/selected", threadId: null },
+          {
+            type: "note",
+            message: "Previously selected thread could not be restored after reconnect; selection cleared.",
+          },
+        ]);
       }
     }
   }
@@ -351,10 +362,26 @@ export class RuntimeManager {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.applyEvents([
+      const events: RuntimeEvent[] = [
         { type: "request/pending", requestId, active: false },
         { type: "runtime/error", message, timestamp: Date.now() },
-      ]);
+      ];
+      const targetThreadId =
+        typeof (params as { threadId?: unknown }).threadId === "string"
+          ? String((params as { threadId: string }).threadId)
+          : null;
+      if (
+        targetThreadId &&
+        (method === "thread/read" || method === "thread/resume" || method === "thread/fork") &&
+        message.toLowerCase().includes("thread not found")
+      ) {
+        events.push({ type: "thread/removed", threadId: targetThreadId });
+        events.push({
+          type: "note",
+          message: `Thread ${targetThreadId} is no longer available in the current runtime and was removed from the sidebar.`,
+        });
+      }
+      this.applyEvents(events);
       if ((error as { code?: number }).code === -32001 || message.includes("Server overloaded")) {
         this.applyEvents([
           {
@@ -559,6 +586,9 @@ export class RuntimeManager {
     logger.debug("rpc response", {
       id: message.id,
       hasError: Boolean(message.error),
+      errorCode: message.error?.code,
+      errorMessage: message.error?.message,
+      errorData: message.error?.data,
     });
   }
 
