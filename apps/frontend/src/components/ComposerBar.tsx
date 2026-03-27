@@ -18,7 +18,8 @@ const personalityOptions: Array<{ value: Personality | "pragmatic"; label: strin
 
 const isThreadNotFoundError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
-  return message.toLowerCase().includes("thread not found");
+  const normalized = message.toLowerCase();
+  return normalized.includes("thread not found") || normalized.includes("no rollout found for thread id");
 };
 
 export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {

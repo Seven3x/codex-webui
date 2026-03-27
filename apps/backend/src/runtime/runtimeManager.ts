@@ -53,6 +53,11 @@ const statusLabel = (status: unknown): string => {
   return JSON.stringify(status);
 };
 
+const isStaleThreadError = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes("thread not found") || normalized.includes("no rollout found for thread id");
+};
+
 export class RuntimeManager {
   private snapshot: RuntimeSnapshot = createEmptySnapshot();
   private rpc: JsonRpcClient | null = null;
@@ -230,7 +235,10 @@ export class RuntimeManager {
         title: "Codex Protocol-Faithful Client",
         version: "0.1.0",
       },
-      capabilities: null,
+      capabilities: {
+        experimentalApi: true,
+        optOutNotificationMethods: null,
+      },
     });
     this.applyEvents([
       {
@@ -258,6 +266,8 @@ export class RuntimeManager {
       limit: 50,
       archived: false,
       sortKey: "updated_at",
+    }, {
+      reconcileThreadList: true,
     });
     if (this.snapshot.selectedThreadId) {
       try {
@@ -318,6 +328,7 @@ export class RuntimeManager {
       mergeThreadResponse?: "loaded" | "resumed";
       selectThreadId?: string | null;
       selectThreadIdFromResponse?: boolean;
+      reconcileThreadList?: boolean;
     },
   ): Promise<AppServerRequestMap[M]["result"]> {
     if (!this.rpc) {
@@ -331,8 +342,22 @@ export class RuntimeManager {
       this.logProtocol("server->client", "response", method, result);
       const events: RuntimeEvent[] = [{ type: "request/pending", requestId, active: false }];
       if (method === "thread/list") {
+        const listedIds = new Set(
+          (result as AppServerRequestMap["thread/list"]["result"]).data.map((thread) => thread.id),
+        );
         for (const thread of (result as AppServerRequestMap["thread/list"]["result"]).data) {
           events.push({ type: "thread/merged", thread, mode: "unloaded" });
+        }
+        if (options?.reconcileThreadList) {
+          for (const threadId of this.snapshot.threadOrder) {
+            const existing = this.snapshot.threads[threadId];
+            if (!existing || existing.archived) {
+              continue;
+            }
+            if (!listedIds.has(threadId)) {
+              events.push({ type: "thread/removed", threadId });
+            }
+          }
         }
       }
       if (method === "thread/archive" && typeof (params as { threadId?: unknown }).threadId === "string") {
@@ -373,7 +398,7 @@ export class RuntimeManager {
       if (
         targetThreadId &&
         (method === "thread/read" || method === "thread/resume" || method === "thread/fork") &&
-        message.toLowerCase().includes("thread not found")
+        isStaleThreadError(message)
       ) {
         events.push({ type: "thread/removed", threadId: targetThreadId });
         events.push({
