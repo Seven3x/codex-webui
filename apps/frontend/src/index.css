@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #17191d;
+  --bg-elevated: #1d2026;
+  --panel: rgba(29, 32, 38, 0.9);
+  --panel-strong: #242831;
+  --panel-soft: #20242c;
+  --text: #f4f7fb;
+  --muted: #98a1b3;
+  --muted-strong: #c4cad6;
+  --border: rgba(132, 144, 167, 0.18);
+  --accent: #ff7b72;
+  --accent-soft: rgba(255, 123, 114, 0.12);
+  --success: #72f1b8;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(255, 123, 114, 0.12), transparent 24%),
+    radial-gradient(circle at top right, rgba(114, 241, 184, 0.08), transparent 18%),
+    linear-gradient(180deg, #17191d 0%, #15181d 100%);
+  color: var(--text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 131, 149, 0.45) transparent;
+}
+
+.scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(121, 131, 149, 0.45);
+  border-radius: 999px;
+}
+
+input,
+textarea,
+select {
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+.surface-card {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+}
+
+.surface-soft {
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+}
+
+.note-panel {
+  background: rgba(36, 40, 49, 0.76);
+  border: 1px dashed rgba(132, 144, 167, 0.24);
+  color: var(--muted);
+}
+
+.mono-panel {
+  background: #111318;
+  border: 1px solid rgba(132, 144, 167, 0.14);
+}
+
+.ghost-btn {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  color: var(--muted-strong);
+}
+
+.ghost-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.primary-btn {
+  background: var(--accent);
+  color: #180d0d;
+}
+
+.primary-btn:hover {
+  filter: brightness(1.04);
+}

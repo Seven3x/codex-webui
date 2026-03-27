@@ -1,0 +1,19 @@
+{
+  "name": "codex-web",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c cyan,yellow \"npm run dev -w apps/backend\" \"npm run dev -w apps/frontend\"",
+    "build": "node ./scripts/run-workspaces.js build",
+    "generate:schema": "codex app-server generate-ts --experimental --out ./generated/codex-schema && codex app-server generate-json-schema --experimental --out ./generated/codex-json-schema",
+    "lint": "node ./scripts/run-workspaces.js typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.8.3"
+  }
+}

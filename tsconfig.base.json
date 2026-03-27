@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@shared/*": [
+        "packages/shared/src/*"
+      ],
+      "@codex-web/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@codex-web/shared/*": [
+        "packages/shared/src/*"
+      ]
+    }
+  }
+}

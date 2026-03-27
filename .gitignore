@@ -1,0 +1,10 @@
+node_modules
+dist
+.vite
+.turbo
+coverage
+logs/*.log
+logs/*.log.*
+data/runtime-cache.json
+test
+generated
