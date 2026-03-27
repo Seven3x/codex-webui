@@ -218,6 +218,17 @@ textarea::placeholder {
   color: #f6c7ab;
 }
 
+.markdown-link {
+  color: #8cc8ff;
+  text-decoration: none;
+  box-shadow: inset 0 -1px 0 rgba(140, 200, 255, 0.35);
+}
+
+.markdown-link:hover {
+  color: #b8ddff;
+  box-shadow: inset 0 -1px 0 rgba(184, 221, 255, 0.75);
+}
+
 .markdown-code-block {
   overflow: hidden;
   border-radius: 1rem;

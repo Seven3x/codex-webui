@@ -16,18 +16,68 @@ const isUnorderedListItem = (line: string): boolean => /^[-*+]\s+/.test(line.tri
 const isOrderedListItem = (line: string): boolean => /^\d+\.\s+/.test(line.trim());
 const isBlockquoteLine = (line: string): boolean => /^>\s?/.test(line.trim());
 
+const localFilePathPattern = /^\/(?:home|Users|mnt|private|var|tmp|opt|etc|root|srv|Volumes)\//;
+
+const resolveHref = (href: string): string => {
+  const trimmed = href.trim();
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed) || trimmed.startsWith("#")) {
+    return trimmed;
+  }
+  if (localFilePathPattern.test(trimmed)) {
+    return `file://${trimmed}`;
+  }
+  return trimmed;
+};
+
 const renderInline = (text: string, keyPrefix: string): ReactNode[] => {
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
-      return (
-        <code key={`${keyPrefix}:code:${index}`}>
-          {part.slice(1, -1)}
-        </code>
-      );
+  const tokenPattern = /(`[^`]+`)|(\[[^\]]+\]\([^)]+\))/g;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = tokenPattern.exec(text);
+
+  while (match) {
+    if (match.index > lastIndex) {
+      nodes.push(<span key={`${keyPrefix}:text:${lastIndex}`}>{text.slice(lastIndex, match.index)}</span>);
     }
-    return <span key={`${keyPrefix}:text:${index}`}>{part}</span>;
-  });
+
+    const token = match[0];
+    if (token.startsWith("`") && token.endsWith("`") && token.length >= 2) {
+      nodes.push(
+        <code key={`${keyPrefix}:code:${match.index}`}>
+          {token.slice(1, -1)}
+        </code>,
+      );
+    } else {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+      const [, label, href] = linkMatch;
+      const resolvedHref = resolveHref(href);
+      nodes.push(
+        <a
+          key={`${keyPrefix}:link:${match.index}`}
+          href={resolvedHref}
+          target="_blank"
+          rel="noreferrer"
+          className="markdown-link"
+          title={href}
+        >
+          {label}
+        </a>,
+      );
+      } else {
+        nodes.push(<span key={`${keyPrefix}:token:${match.index}`}>{token}</span>);
+      }
+    }
+
+    lastIndex = match.index + token.length;
+    match = tokenPattern.exec(text);
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(<span key={`${keyPrefix}:text:${lastIndex}`}>{text.slice(lastIndex)}</span>);
+  }
+
+  return nodes;
 };
 
 const parseMarkdownBlocks = (source: string): Block[] => {
