@@ -185,6 +185,9 @@ const bodyPreview = (item: ItemRecord, maxLength = 140): string => {
   return compactText(body, maxLength);
 };
 
+const approvalCountLabel = (count: number, status: "pending" | "resolved"): string =>
+  `${count} ${status} approval${count === 1 ? "" : "s"}`;
+
 const RunningBadge = ({ label = "Running" }: { label?: string }) => (
   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-200 ring-1 ring-emerald-400/20">
     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
@@ -285,6 +288,8 @@ const TurnDivider = ({
 const ApprovalCard = ({ approval, debug }: { approval: ApprovalRecord; debug: ResolvedDebugPreferences }) => {
   const { callAction } = useRuntimeStore();
   const [showParams, setShowParams] = useState(false);
+  const [submittingDecision, setSubmittingDecision] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   return (
     <div className="rounded-[18px] bg-rose-500/[0.06] px-3.5 py-3 ring-1 ring-rose-400/15">
@@ -312,19 +317,29 @@ const ApprovalCard = ({ approval, debug }: { approval: ApprovalRecord; debug: Re
           {["accept", "acceptForSession", "decline", "cancel"].map((decision) => (
             <button
               key={decision}
-              className="ghost-btn rounded-full px-3 py-1 text-[11px]"
-              onClick={() =>
+              disabled={submittingDecision !== null}
+              className="ghost-btn rounded-full px-3 py-1 text-[11px] disabled:opacity-50"
+              onClick={() => {
+                setSubmittingDecision(decision);
+                setSubmitError(null);
                 void callAction("approval.respond", {
                   requestId: approval.requestId,
                   decision,
                 })
-              }
+                  .catch((error) => {
+                    setSubmitError(error instanceof Error ? error.message : String(error));
+                  })
+                  .finally(() => {
+                    setSubmittingDecision(null);
+                  });
+              }}
             >
-              {decision}
+              {submittingDecision === decision ? "Submitting..." : decision}
             </button>
           ))}
         </div>
       )}
+      {submitError && <div className="mt-3 text-xs text-rose-200">{submitError}</div>}
     </div>
   );
 };
@@ -417,10 +432,12 @@ const AssistantPlaceholder = ({
 
 const CommandCluster = ({
   items,
+  approvalsByItemId = {},
   debug,
   onInspectItem,
 }: {
   items: ItemRecord[];
+  approvalsByItemId?: Record<string, ApprovalRecord[]>;
   debug: ResolvedDebugPreferences;
   onInspectItem: (itemId: string) => void;
 }) => {
@@ -480,6 +497,13 @@ const CommandCluster = ({
                   </pre>
                 </details>
               )}
+              {(approvalsByItemId[item.id] ?? []).length > 0 && (
+                <div className="space-y-3 pt-1">
+                  {(approvalsByItemId[item.id] ?? []).map((approval) => (
+                    <ApprovalCard key={approval.requestId} approval={approval} debug={debug} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -490,10 +514,12 @@ const CommandCluster = ({
 
 const FileChangeEntry = ({
   item,
+  approvals = [],
   debug,
   onInspectItem,
 }: {
   item: ItemRecord;
+  approvals?: ApprovalRecord[];
   debug: ResolvedDebugPreferences;
   onInspectItem: (itemId: string) => void;
 }) => {
@@ -549,6 +575,11 @@ const FileChangeEntry = ({
                 {JSON.stringify(item.rawItem, null, 2)}
               </pre>
             </details>
+          )}
+          {approvals.length > 0 && (
+            <div className="space-y-3">
+              {approvals.map((approval) => <ApprovalCard key={approval.requestId} approval={approval} debug={debug} />)}
+            </div>
           )}
         </div>
       )}
@@ -686,12 +717,12 @@ const CodexGroup = ({
   const firstMessage = group.entries.find((entry) => entry.kind === "item" && entry.item?.type === "agentMessage")?.item ?? null;
   const commandEntries = group.entries
     .filter((entry) => entry.kind === "item" && entry.item?.type === "commandExecution")
-    .map((entry) => entry.item)
-    .filter((item): item is ItemRecord => Boolean(item));
+    .map((entry) => ({ item: entry.item, approvals: entry.approvals }))
+    .filter((entry): entry is { item: ItemRecord; approvals: ApprovalRecord[] } => Boolean(entry.item));
   const fileEntries = group.entries
     .filter((entry) => entry.kind === "item" && entry.item?.type === "fileChange")
-    .map((entry) => entry.item)
-    .filter((item): item is ItemRecord => Boolean(item));
+    .map((entry) => ({ item: entry.item, approvals: entry.approvals }))
+    .filter((entry): entry is { item: ItemRecord; approvals: ApprovalRecord[] } => Boolean(entry.item));
   const otherEntries = group.entries.filter(
     (entry) =>
       (entry.kind === "approval" && entry.approval) ||
@@ -705,8 +736,17 @@ const CodexGroup = ({
   return (
     <section className="space-y-4">
       {firstMessage && <AssistantMessage item={firstMessage} debug={debug} onInspectItem={onInspectItem} />}
-      {commandEntries.length > 0 && <CommandCluster items={commandEntries} debug={debug} onInspectItem={onInspectItem} />}
-      {fileEntries.map((item) => <FileChangeEntry key={item.id} item={item} debug={debug} onInspectItem={onInspectItem} />)}
+      {commandEntries.length > 0 && (
+        <CommandCluster
+          items={commandEntries.map((entry) => entry.item)}
+          approvalsByItemId={Object.fromEntries(commandEntries.map((entry) => [entry.item.id, entry.approvals]))}
+          debug={debug}
+          onInspectItem={onInspectItem}
+        />
+      )}
+      {fileEntries.map((entry) => (
+        <FileChangeEntry key={entry.item.id} item={entry.item} approvals={entry.approvals} debug={debug} onInspectItem={onInspectItem} />
+      ))}
       {otherEntries.map((entry, index) => {
         if (entry.kind === "approval" && entry.approval) {
           return <ApprovalCard key={`${group.id}:approval:${index}`} approval={entry.approval} debug={debug} />;
@@ -930,6 +970,12 @@ export const TimelinePane = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stats = threadStats(thread);
   const hasTurnSummariesWithoutItems = threadHasTurnSummariesWithoutItems(thread);
+  const resolvedApprovalCount = useMemo(() => {
+    if (!thread) {
+      return 0;
+    }
+    return Object.values(snapshot.approvals).filter((approval) => approval.threadId === thread.id && approval.status !== "pending").length;
+  }, [snapshot.approvals, thread]);
 
   const optimisticThreadTurns = useMemo(() => {
     if (!thread) {
@@ -1077,7 +1123,13 @@ export const TimelinePane = ({
               {stats.approvals > 0 && (
                 <>
                   <span className="text-slate-600">/</span>
-                  <span>{`${stats.approvals} approvals`}</span>
+                  <span>{approvalCountLabel(stats.approvals, "pending")}</span>
+                </>
+              )}
+              {resolvedApprovalCount > 0 && (
+                <>
+                  <span className="text-slate-600">/</span>
+                  <span>{approvalCountLabel(resolvedApprovalCount, "resolved")}</span>
                 </>
               )}
               {thread.activeTurnId && <RunningBadge label="Generating" />}
@@ -1097,7 +1149,13 @@ export const TimelinePane = ({
                 {stats.approvals > 0 && (
                   <>
                     <span className="text-slate-600">/</span>
-                    <span>{`${stats.approvals} approvals`}</span>
+                    <span>{approvalCountLabel(stats.approvals, "pending")}</span>
+                  </>
+                )}
+                {resolvedApprovalCount > 0 && (
+                  <>
+                    <span className="text-slate-600">/</span>
+                    <span>{approvalCountLabel(resolvedApprovalCount, "resolved")}</span>
                   </>
                 )}
                 {thread.activeTurnId && <RunningBadge label="Generating" />}

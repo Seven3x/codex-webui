@@ -396,6 +396,10 @@ const upsertThread = (snapshot: RuntimeSnapshot, thread: Thread, mode: ThreadRec
       if (replaceRuntimeTurnState) {
         turnRecord.startedAt = turnRecord.startedAt ?? 1;
         turnRecord.completedAt = turn.status === "inProgress" ? null : (turnRecord.completedAt ?? 1);
+        turnRecord.pendingApprovals = turnRecord.pendingApprovals.filter((requestId) => {
+          const approval = snapshot.approvals[requestId];
+          return approval?.threadId === thread.id && approval.turnId === turn.id && approval.status === "pending";
+        });
       }
       for (const item of turn.items) {
         upsertItem(turnRecord, item as unknown as Record<string, unknown>, null, turn.status !== "inProgress");
@@ -705,9 +709,30 @@ const cloneSnapshotForReduction = (snapshot: RuntimeSnapshot): RuntimeSnapshot =
   lastUpdatedAt: Date.now(),
 });
 
+const sanitizePendingApprovals = (snapshot: RuntimeSnapshot): RuntimeSnapshot => {
+  for (const threadId of snapshot.threadOrder) {
+    const thread = snapshot.threads[threadId];
+    if (!thread) {
+      continue;
+    }
+    for (const turnId of thread.turnOrder) {
+      const turn = thread.turns[turnId];
+      if (!turn) {
+        continue;
+      }
+      turn.pendingApprovals = turn.pendingApprovals.filter((requestId) => {
+        const approval = snapshot.approvals[requestId];
+        return approval?.threadId === threadId && approval.turnId === turnId && approval.status === "pending";
+      });
+    }
+  }
+  snapshot.runtime.pendingServerRequests = snapshot.runtime.pendingServerRequests.filter((requestId) => snapshot.approvals[requestId]?.status === "pending");
+  return snapshot;
+};
+
 const applyRuntimeEventToSnapshot = (next: RuntimeSnapshot, event: RuntimeEvent): RuntimeSnapshot => {
   if (event.type === "snapshot/hydrated") {
-    return cloneSnapshotForReduction(event.snapshot);
+    return sanitizePendingApprovals(cloneSnapshotForReduction(event.snapshot));
   }
   next.lastUpdatedAt = Date.now();
 
@@ -845,6 +870,11 @@ const applyRuntimeEventToSnapshot = (next: RuntimeSnapshot, event: RuntimeEvent)
         approval.status = event.status;
         approval.response = event.response;
         approval.resolvedAt = event.resolvedAt;
+        const thread = next.threads[approval.threadId];
+        const turn = thread?.turns[approval.turnId];
+        if (turn) {
+          turn.pendingApprovals = turn.pendingApprovals.filter((requestId) => requestId !== event.requestId);
+        }
       }
       next.runtime.pendingServerRequests = next.runtime.pendingServerRequests.filter((id) => id !== event.requestId);
       return next;

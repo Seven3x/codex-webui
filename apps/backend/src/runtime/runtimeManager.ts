@@ -283,7 +283,36 @@ export class RuntimeManager {
           "Current generated schema does not expose thread/shellCommand; the UI marks that capability as unavailable instead of inventing a surrogate method.",
       },
     ]);
+    this.resolveStalePendingApprovals();
     await this.refreshThreadsAfterReconnect();
+  }
+
+  private resolveStalePendingApprovals(): void {
+    if (!this.rpc) {
+      return;
+    }
+    const liveRequestIds = new Set(this.rpc.getPendingServerRequests().map((request) => String(request.id)));
+    const staleRequestIds = Object.values(this.snapshot.approvals)
+      .filter((approval) => approval.status === "pending" && !liveRequestIds.has(approval.requestId))
+      .map((approval) => approval.requestId);
+
+    if (staleRequestIds.length === 0) {
+      return;
+    }
+
+    this.applyEvents([
+      ...staleRequestIds.map((requestId) => ({
+        type: "approval/resolved" as const,
+        requestId,
+        status: "cancelled" as const,
+        response: { stale: true },
+        resolvedAt: Date.now(),
+      })),
+      {
+        type: "note" as const,
+        message: `Cleared ${staleRequestIds.length} stale approval request${staleRequestIds.length === 1 ? "" : "s"} after runtime reconnect.`,
+      },
+    ]);
   }
 
   private async refreshThreadsAfterReconnect(): Promise<void> {
@@ -649,6 +678,23 @@ export class RuntimeManager {
     const approval = this.snapshot.approvals[requestId];
     if (!approval) {
       throw new Error(`approval ${requestId} not found`);
+    }
+    const liveRequestIds = new Set(this.rpc.getPendingServerRequests().map((request) => String(request.id)));
+    if (!liveRequestIds.has(requestId)) {
+      this.applyEvents([
+        {
+          type: "approval/resolved",
+          requestId,
+          status: "cancelled",
+          response: { stale: true },
+          resolvedAt: Date.now(),
+        },
+        {
+          type: "note",
+          message: `Approval ${requestId} is no longer active in the current runtime and was cleared.`,
+        },
+      ]);
+      throw new Error("This approval is stale. The runtime no longer has a live request to respond to.");
     }
     this.rpc.respond(requestId, { decision });
     const statusMap = new Map<string, "accepted" | "acceptedForSession" | "declined" | "cancelled">([
