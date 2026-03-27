@@ -5,6 +5,7 @@ import type {
   Turn,
 } from "./codex";
 import { KNOWN_ITEM_TYPES } from "./codex";
+import { renderFileChanges } from "./file-change";
 
 export type ConnectionState =
   | "disconnected"
@@ -453,25 +454,6 @@ const joinStringArray = (value: unknown): string =>
         .filter((entry) => entry.length > 0)
         .join("\n\n")
     : "";
-
-const renderFileChanges = (value: unknown): string => {
-  if (!Array.isArray(value) || value.length === 0) {
-    return "";
-  }
-
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return JSON.stringify(entry);
-      }
-      const record = entry as Record<string, unknown>;
-      const path = String(record.path ?? "unknown");
-      const kind = String(record.kind ?? "change");
-      const diff = typeof record.diff === "string" ? record.diff.trim() : "";
-      return diff ? `${kind} ${path}\n${diff}` : `${kind} ${path}`;
-    })
-    .join("\n\n");
-};
 
 const renderWebSearchAction = (value: unknown): string => {
   if (!value || typeof value !== "object") {

@@ -153,7 +153,18 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
     }
   };
 
-  const openThread = async (threadId: string) => {
+  const openThread = async (threadId: string, options?: { preferReadOnly?: boolean }) => {
+    const existingThread = snapshot.threads[threadId];
+    const hasProjectedItems = existingThread
+      ? existingThread.turnOrder.some((turnId) => (existingThread.turns[turnId]?.itemOrder.length ?? 0) > 0)
+      : false;
+
+    if (!options?.preferReadOnly && existingThread && existingThread.historyState !== "resumed" && !hasProjectedItems) {
+      setActionMessage("Opening a resumed copy so full command, file, and tool history stays visible...");
+      await resumeThread(threadId);
+      return;
+    }
+
     selectThread(threadId);
     navigateToRoute({ name: "thread", threadId });
     try {
@@ -266,18 +277,20 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
           className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
         />
         <div className={`grid gap-2 ${isMobile ? "grid-cols-1" : "md:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
-          <select
-            value={selectedCwd}
-            onChange={(event) => setSelectedCwd(event.target.value)}
-            className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
-          >
-            <option value="">All workspaces</option>
-            {cwdOptions.map((cwd) => (
-              <option key={cwd} value={cwd}>
-                {cwd}
-              </option>
-            ))}
-          </select>
+          <div>
+            <input
+              list="thread-cwd-options"
+              value={selectedCwd}
+              onChange={(event) => setSelectedCwd(event.target.value)}
+              placeholder="Workspace / cwd"
+              className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
+            />
+            <datalist id="thread-cwd-options">
+              {cwdOptions.map((cwd) => (
+                <option key={cwd} value={cwd} />
+              ))}
+            </datalist>
+          </div>
           <button className={`ghost-btn rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"}`} onClick={() => void fetchThreads()}>
             Refresh
           </button>
@@ -346,7 +359,7 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
                         ...
                       </summary>
                       <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void openThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void openThread(thread.id, { preferReadOnly: true })}>
                           Read
                         </button>
                         <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void resumeThread(thread.id)}>

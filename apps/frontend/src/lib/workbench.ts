@@ -1,4 +1,4 @@
-import type { ApprovalRecord, ItemRecord, ThreadRecord, TurnRecord } from "@codex-web/shared";
+import { renderFileChanges, type ApprovalRecord, type ItemRecord, type ThreadRecord, type TurnRecord } from "@codex-web/shared";
 
 export type WorkbenchLane = "user" | "codex" | "system";
 
@@ -66,18 +66,7 @@ export const extractItemBody = (item: ItemRecord): string => {
     }
   }
   if (item.type === "fileChange" && Array.isArray(item.rawItem?.changes)) {
-    return item.rawItem.changes
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return JSON.stringify(entry);
-        }
-        const record = entry as Record<string, unknown>;
-        const path = String(record.path ?? "unknown");
-        const kind = String(record.kind ?? "change");
-        const diff = typeof record.diff === "string" ? record.diff.trim() : "";
-        return diff ? `${kind} ${path}\n${diff}` : `${kind} ${path}`;
-      })
-      .join("\n\n");
+    return renderFileChanges(item.rawItem.changes);
   }
   if (item.type === "webSearch") {
     const action = item.rawItem?.action;

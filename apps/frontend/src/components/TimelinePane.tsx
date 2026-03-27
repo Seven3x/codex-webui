@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ApprovalRecord, ItemRecord, TurnRecord } from "@codex-web/shared";
+import { normalizeFileChanges, type ApprovalRecord, type ItemRecord, type NormalizedFileChange, type TurnRecord } from "@codex-web/shared";
 import { ComposerBar } from "./ComposerBar";
 import { MarkdownText } from "./MarkdownText";
 import type { ResolvedDebugPreferences } from "../lib/debugPreferences";
@@ -89,12 +89,92 @@ const commandStatusSummary = (items: ItemRecord[]): string => {
   return `Ran ${items.length} command${items.length === 1 ? "" : "s"}`;
 };
 
+const commandPreview = (items: ItemRecord[]): string =>
+  compactText(
+    items
+      .map((item) => commandText(item))
+      .filter((value) => value.trim().length > 0)
+      .join("  •  "),
+    220,
+  );
+
 const fileChangeSummary = (item: ItemRecord): string => {
   const changeCount = Array.isArray(item.rawItem?.changes) ? item.rawItem.changes.length : 0;
   if (isStreamingItem(item)) {
     return changeCount > 0 ? `Editing ${changeCount} files` : "Editing files";
   }
   return `Edited ${changeCount || 1} file${changeCount === 1 ? "" : "s"}`;
+};
+
+const fileChangePreview = (changes: NormalizedFileChange[], maxLength: number): string => {
+  if (changes.length === 0) {
+    return "No rendered details.";
+  }
+  return compactText(
+    changes
+      .map((change) => `${change.kindLabel} ${change.path}${change.movePath ? ` -> ${change.movePath}` : ""}`)
+      .join("  •  "),
+    maxLength,
+  );
+};
+
+const diffToneForLine = (line: string): string => {
+  if (line.startsWith("@@")) {
+    return "bg-sky-500/10 text-sky-100";
+  }
+  if ((line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git") || line.startsWith("index ")) && line.length > 0) {
+    return "bg-slate-500/10 text-slate-200";
+  }
+  if (line.startsWith("+")) {
+    return "bg-emerald-500/14 text-emerald-100";
+  }
+  if (line.startsWith("-")) {
+    return "bg-rose-500/14 text-rose-100";
+  }
+  return "text-slate-300";
+};
+
+const diffMarkerForLine = (line: string): string => {
+  if (line.startsWith("+")) {
+    return "+";
+  }
+  if (line.startsWith("-")) {
+    return "-";
+  }
+  if (line.startsWith("@@")) {
+    return "@";
+  }
+  return " ";
+};
+
+const FileDiffCard = ({ change }: { change: NormalizedFileChange }) => {
+  const lines = change.diffText.replace(/\r\n?/g, "\n").split("\n");
+
+  return (
+    <div className="overflow-hidden rounded-[16px] bg-black/12 ring-1 ring-white/6">
+      <div className="flex items-start justify-between gap-3 px-3 py-3">
+        <div className="min-w-0">
+          <div className="break-all font-mono text-xs text-slate-100">{change.path}</div>
+          {change.movePath && <div className="mt-1 break-all text-[11px] text-slate-500">{`Moved to ${change.movePath}`}</div>}
+        </div>
+        <MetaBadge>{change.kindLabel}</MetaBadge>
+      </div>
+      {change.diffText ? (
+        <div className="scrollbar max-h-72 overflow-auto border-t border-white/6 bg-[#0f1318]">
+          <div className="min-w-max">
+            {lines.map((line, index) => (
+              <div key={`${change.path}:${index}`} className={`flex items-start gap-2.5 px-3 py-0.5 font-mono text-xs leading-4 ${diffToneForLine(line)}`}>
+                <span className="w-3 shrink-0 text-center text-[11px] opacity-70">{diffMarkerForLine(line)}</span>
+                <code className="block min-w-0 whitespace-pre">{line || " "}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="border-t border-white/6 px-3 py-3 text-xs text-slate-500">No diff payload.</div>
+      )}
+    </div>
+  );
 };
 
 const bodyPreview = (item: ItemRecord, maxLength = 140): string => {
@@ -360,7 +440,10 @@ const CommandCluster = ({
             <span>{summary}</span>
             {running && <RunningBadge label="Live" />}
           </div>
-          {open && <div className="mt-1 font-mono text-xs text-slate-500">{compactText(items.map((item) => commandText(item)).join("  •  "), 200)}</div>}
+          <div className="mt-1 break-all font-mono text-xs text-slate-500">{commandPreview(items)}</div>
+          {!open && items.length === 1 && (
+            <div className="mt-2 text-xs leading-5 text-slate-500">{bodyPreview(items[0], 180)}</div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {debug.showItemTypeBadges && <MetaBadge>commandExecution</MetaBadge>}
@@ -415,6 +498,8 @@ const FileChangeEntry = ({
   onInspectItem: (itemId: string) => void;
 }) => {
   const [open, setOpen] = useState(false);
+  const changes = normalizeFileChanges(item.rawItem?.changes);
+  const preview = changes.length > 0 ? fileChangePreview(changes, open ? 280 : 220) : bodyPreview(item, open ? 220 : 180);
 
   return (
     <details
@@ -428,7 +513,7 @@ const FileChangeEntry = ({
             <span>{fileChangeSummary(item)}</span>
             {isStreamingItem(item) && <RunningBadge label="Live" />}
           </div>
-          {open && <p className="mt-1 text-sm leading-6 text-slate-400">{bodyPreview(item, 180)}</p>}
+          <p className="mt-1 text-sm leading-6 text-slate-400">{preview}</p>
         </div>
         <div className="flex items-center gap-2">
           {debug.showItemTypeBadges && <MetaBadge>{item.type}</MetaBadge>}
@@ -439,10 +524,24 @@ const FileChangeEntry = ({
 
       {open && (
         <div className="mt-3 space-y-3 border-t border-blue-400/10 pt-3">
-          <pre className="mono-panel scrollbar max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
-            {extractItemBody(item) || JSON.stringify(item.rawItem, null, 2)}
-            {isStreamingItem(item) && <StreamingCursor />}
-          </pre>
+          {changes.length > 0 ? (
+            <div className="space-y-3">
+              {changes.map((change, index) => (
+                <FileDiffCard key={`${item.id}:${change.path}:${index}`} change={change} />
+              ))}
+              {isStreamingItem(item) && (
+                <div className="flex items-center gap-2 text-xs text-emerald-200">
+                  <StreamingCursor />
+                  <span>Waiting for more file change output.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <pre className="mono-panel scrollbar max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
+              {extractItemBody(item) || JSON.stringify(item.rawItem, null, 2)}
+              {isStreamingItem(item) && <StreamingCursor />}
+            </pre>
+          )}
           {debug.showRawEventControls && (
             <details className="rounded-[14px] bg-white/[0.03] px-3 py-2">
               <summary className="cursor-pointer list-none text-[11px] uppercase tracking-[0.16em] text-slate-500">Raw payload</summary>
