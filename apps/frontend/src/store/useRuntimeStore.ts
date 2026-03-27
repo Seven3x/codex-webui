@@ -9,12 +9,14 @@ import type {
   ThreadForkResponse,
   ThreadResumeResponse,
   ThreadStartResponse,
+  TurnRecord,
 } from "@codex-web/shared";
 import { createEmptySnapshot, reduceRuntimeEvents } from "@codex-web/shared";
 import { fetchRuntime, postAction } from "../lib/api";
 
 type SocketState = "connecting" | "open" | "closed";
 const cwdStorageKey = "codex-web:selected-cwd";
+const optimisticAssistantPlaceholder = "Codex is thinking...";
 
 export type ComposerProfile = {
   model: string;
@@ -22,6 +24,19 @@ export type ComposerProfile = {
   approvalPolicy: AskForApproval | "on-request";
   personality: Personality | "pragmatic";
 };
+
+export type OptimisticTurnStatus = "sending" | "streaming" | "failed";
+
+export interface OptimisticTurn {
+  localId: string;
+  threadId: string | null;
+  turnId: string | null;
+  userText: string;
+  assistantPlaceholder: string;
+  status: OptimisticTurnStatus;
+  createdAt: number;
+  error: string | null;
+}
 
 const readStoredCwd = (): string => {
   if (typeof window === "undefined") {
@@ -38,10 +53,17 @@ type RuntimeStore = {
   availableModels: Model[];
   composerDefaults: ComposerProfile;
   threadProfiles: Record<string, ComposerProfile>;
+  optimisticTurns: OptimisticTurn[];
   connect: () => void;
   hydrate: () => Promise<void>;
   applyEvents: (events: RuntimeEvent[]) => void;
+  enqueueEvents: (events: RuntimeEvent[]) => void;
+  flushPendingEvents: () => void;
   callAction: <T>(action: string, payload?: Record<string, unknown>) => Promise<T>;
+  beginOptimisticTurn: (draft: { threadId: string | null; userText: string; assistantPlaceholder?: string }) => string;
+  updateOptimisticTurn: (localId: string, patch: Partial<Omit<OptimisticTurn, "localId" | "createdAt">>) => void;
+  failOptimisticTurn: (localId: string, error: string) => void;
+  clearOptimisticTurn: (localId: string) => void;
   selectThread: (threadId: string | null) => void;
   selectItem: (itemId: string | null) => void;
   setSelectedCwd: (cwd: string) => void;
@@ -52,6 +74,179 @@ type RuntimeStore = {
 
 let socket: WebSocket | null = null;
 let reconnectTimer: number | null = null;
+let pendingSocketEvents: RuntimeEvent[] = [];
+let pendingEventsFrame: number | null = null;
+let pendingEventsTimeout: number | null = null;
+
+const clearPendingEventFlush = (): void => {
+  if (typeof window === "undefined") {
+    pendingSocketEvents = [];
+    pendingEventsFrame = null;
+    pendingEventsTimeout = null;
+    return;
+  }
+  if (pendingEventsFrame !== null) {
+    window.cancelAnimationFrame(pendingEventsFrame);
+    pendingEventsFrame = null;
+  }
+  if (pendingEventsTimeout !== null) {
+    window.clearTimeout(pendingEventsTimeout);
+    pendingEventsTimeout = null;
+  }
+};
+
+const schedulePendingEventFlush = (flush: () => void): void => {
+  if (typeof window === "undefined") {
+    flush();
+    return;
+  }
+  if (pendingEventsFrame !== null || pendingEventsTimeout !== null) {
+    return;
+  }
+  pendingEventsFrame = window.requestAnimationFrame(() => {
+    pendingEventsFrame = null;
+    flush();
+  });
+  pendingEventsTimeout = window.setTimeout(() => {
+    if (pendingEventsFrame !== null) {
+      window.cancelAnimationFrame(pendingEventsFrame);
+      pendingEventsFrame = null;
+    }
+    pendingEventsTimeout = null;
+    flush();
+  }, 24);
+};
+
+const cloneOptimisticTurn = (entry: OptimisticTurn): OptimisticTurn => ({
+  ...entry,
+});
+
+const findLatestOptimisticTurnIndex = (
+  optimisticTurns: OptimisticTurn[],
+  predicate: (entry: OptimisticTurn) => boolean,
+): number => {
+  for (let index = optimisticTurns.length - 1; index >= 0; index -= 1) {
+    if (predicate(optimisticTurns[index])) {
+      return index;
+    }
+  }
+  return -1;
+};
+
+const isAssistantWorkItemType = (type: string): boolean =>
+  type === "agentMessage" || type === "commandExecution" || type === "fileChange";
+
+const isFinalTurnStatus = (status: string, turn: TurnRecord): boolean =>
+  Boolean(turn.completedAt) || ["completed", "failed", "cancelled", "interrupted"].includes(status);
+
+const getTurnForOptimistic = (snapshot: RuntimeSnapshot, entry: OptimisticTurn): TurnRecord | null => {
+  if (!entry.threadId || !entry.turnId) {
+    return null;
+  }
+  return snapshot.threads[entry.threadId]?.turns[entry.turnId] ?? null;
+};
+
+const turnHasAssistantActivity = (turn: TurnRecord): boolean =>
+  turn.itemOrder.some((itemId) => {
+    const item = turn.items[itemId];
+    return Boolean(item) && isAssistantWorkItemType(item.type);
+  });
+
+const finalizeOptimisticTurns = (optimisticTurns: OptimisticTurn[], snapshot: RuntimeSnapshot): OptimisticTurn[] =>
+  optimisticTurns.filter((entry) => {
+    if (entry.status === "failed") {
+      return true;
+    }
+    const turn = getTurnForOptimistic(snapshot, entry);
+    if (!turn) {
+      return true;
+    }
+    if (isFinalTurnStatus(turn.status, turn)) {
+      return false;
+    }
+    if (turnHasAssistantActivity(turn)) {
+      return false;
+    }
+    return true;
+  });
+
+const reconcileOptimisticTurns = (
+  optimisticTurns: OptimisticTurn[],
+  nextSnapshot: RuntimeSnapshot,
+  events: RuntimeEvent[],
+): OptimisticTurn[] => {
+  const next = optimisticTurns.map(cloneOptimisticTurn);
+
+  for (const event of events) {
+    switch (event.type) {
+      case "thread/merged": {
+        const optimisticIndex = findLatestOptimisticTurnIndex(
+          next,
+          (entry) => entry.threadId === null && entry.status !== "failed",
+        );
+        if (optimisticIndex >= 0) {
+          next[optimisticIndex].threadId = event.thread.id;
+        }
+        break;
+      }
+      case "thread/removed": {
+        for (let index = next.length - 1; index >= 0; index -= 1) {
+          if (next[index].threadId === event.threadId && next[index].status !== "failed") {
+            next.splice(index, 1);
+          }
+        }
+        break;
+      }
+      case "turn/merged": {
+        const optimisticIndex = findLatestOptimisticTurnIndex(
+          next,
+          (entry) => entry.threadId === event.threadId && entry.turnId === null && entry.status !== "failed",
+        );
+        if (optimisticIndex >= 0) {
+          next[optimisticIndex].turnId = event.turn.id;
+        }
+        break;
+      }
+      case "item/started":
+      case "item/completed": {
+        const itemType = String(event.item.type ?? "unknown");
+        if (!isAssistantWorkItemType(itemType)) {
+          break;
+        }
+        const optimisticIndex = findLatestOptimisticTurnIndex(
+          next,
+          (entry) =>
+            entry.threadId === event.threadId &&
+            (entry.turnId === null || entry.turnId === event.turnId) &&
+            entry.status !== "failed",
+        );
+        if (optimisticIndex >= 0) {
+          next[optimisticIndex].turnId = event.turnId;
+          next[optimisticIndex].status = "streaming";
+        }
+        break;
+      }
+      case "item/delta": {
+        const optimisticIndex = findLatestOptimisticTurnIndex(
+          next,
+          (entry) =>
+            entry.threadId === event.threadId &&
+            (entry.turnId === null || entry.turnId === event.turnId) &&
+            entry.status !== "failed",
+        );
+        if (optimisticIndex >= 0) {
+          next[optimisticIndex].turnId = event.turnId;
+          next[optimisticIndex].status = "streaming";
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return finalizeOptimisticTurns(next, nextSnapshot);
+};
 
 export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   snapshot: createEmptySnapshot(),
@@ -66,21 +261,96 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     personality: "pragmatic",
   },
   threadProfiles: {},
+  optimisticTurns: [],
   hydrate: async () => {
     const snapshot = await fetchRuntime<RuntimeSnapshot>();
-    set({
-      snapshot,
-    });
-  },
-  applyEvents: (events) => {
     set((state) => ({
-      snapshot: reduceRuntimeEvents(state.snapshot, events),
+      snapshot,
+      optimisticTurns: finalizeOptimisticTurns(state.optimisticTurns, snapshot),
     }));
   },
+  applyEvents: (events) => {
+    if (events.length === 0) {
+      return;
+    }
+    set((state) => {
+      const snapshot = reduceRuntimeEvents(state.snapshot, events);
+      return {
+        snapshot,
+        optimisticTurns: reconcileOptimisticTurns(state.optimisticTurns, snapshot, events),
+      };
+    });
+  },
+  enqueueEvents: (events) => {
+    if (events.length === 0) {
+      return;
+    }
+    pendingSocketEvents.push(...events);
+    schedulePendingEventFlush(() => {
+      get().flushPendingEvents();
+    });
+  },
+  flushPendingEvents: () => {
+    clearPendingEventFlush();
+    if (pendingSocketEvents.length === 0) {
+      return;
+    }
+    const events = pendingSocketEvents;
+    pendingSocketEvents = [];
+    get().applyEvents(events);
+  },
+  beginOptimisticTurn: ({ threadId, userText, assistantPlaceholder }) => {
+    const localId = `optimistic-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    set((state) => ({
+      optimisticTurns: [
+        ...state.optimisticTurns,
+        {
+          localId,
+          threadId,
+          turnId: null,
+          userText,
+          assistantPlaceholder: assistantPlaceholder ?? optimisticAssistantPlaceholder,
+          status: "sending",
+          createdAt: Date.now(),
+          error: null,
+        },
+      ],
+    }));
+    return localId;
+  },
+  updateOptimisticTurn: (localId, patch) =>
+    set((state) => ({
+      optimisticTurns: state.optimisticTurns.map((entry) =>
+        entry.localId === localId
+          ? {
+              ...entry,
+              ...patch,
+            }
+          : entry,
+      ),
+    })),
+  failOptimisticTurn: (localId, error) =>
+    set((state) => ({
+      optimisticTurns: state.optimisticTurns.map((entry) =>
+        entry.localId === localId
+          ? {
+              ...entry,
+              status: "failed",
+              error,
+            }
+          : entry,
+      ),
+    })),
+  clearOptimisticTurn: (localId) =>
+    set((state) => ({
+      optimisticTurns: state.optimisticTurns.filter((entry) => entry.localId !== localId),
+    })),
   connect: () => {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    clearPendingEventFlush();
+    pendingSocketEvents = [];
     set({ socketState: "connecting" });
     socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);
     socket.onopen = () => {
@@ -91,12 +361,19 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
         | { type: "runtime/snapshot"; snapshot: RuntimeSnapshot }
         | { type: "runtime/events"; events: RuntimeEvent[] };
       if (parsed.type === "runtime/snapshot") {
-        set({ snapshot: parsed.snapshot });
+        clearPendingEventFlush();
+        pendingSocketEvents = [];
+        set((state) => ({
+          snapshot: parsed.snapshot,
+          optimisticTurns: finalizeOptimisticTurns(state.optimisticTurns, parsed.snapshot),
+        }));
       } else {
-        get().applyEvents(parsed.events);
+        get().enqueueEvents(parsed.events);
       }
     };
     socket.onclose = () => {
+      clearPendingEventFlush();
+      pendingSocketEvents = [];
       set({ socketState: "closed" });
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
@@ -106,7 +383,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       }, 1200);
     };
   },
-  callAction: async (action, payload = {}) => {
+  callAction: async (action: string, payload: Record<string, unknown> = {}) => {
     const response = await postAction<unknown>(action, payload);
     if (action === "thread.start" || action === "thread.resume" || action === "thread.fork") {
       const threadResponse = response as ThreadStartResponse | ThreadResumeResponse | ThreadForkResponse;

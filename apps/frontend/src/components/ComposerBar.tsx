@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AskForApproval, ConfigReadResponse, ModelListResponse, Personality, ReasoningEffort } from "@codex-web/shared";
+import type {
+  AskForApproval,
+  ConfigReadResponse,
+  ModelListResponse,
+  Personality,
+  ReasoningEffort,
+  TurnStartResponse,
+} from "@codex-web/shared";
 import { navigateToRoute } from "../lib/routes";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
@@ -34,6 +41,9 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
     composerDefaults,
     setComposerDefaults,
     threadProfiles,
+    beginOptimisticTurn,
+    updateOptimisticTurn,
+    failOptimisticTurn,
   } = useRuntimeStore();
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
@@ -149,9 +159,16 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
   };
 
   const sendTurn = async (): Promise<void> => {
-    if (!text.trim()) {
+    const outgoingText = text.trim();
+    if (!outgoingText) {
       return;
     }
+    setComposerError(null);
+    setText("");
+    const optimisticTurnId = beginOptimisticTurn({
+      threadId: snapshot.selectedThreadId,
+      userText: outgoingText,
+    });
 
     const startFreshThread = async (): Promise<string> => {
       const response = await callAction<{ thread: { id: string } }>("thread.start", {
@@ -163,13 +180,14 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
         persistExtendedHistory: true,
       });
       const nextThreadId = response.thread.id;
+      updateOptimisticTurn(optimisticTurnId, { threadId: nextThreadId });
       selectThread(nextThreadId);
       navigateToRoute({ name: "thread", threadId: nextThreadId });
       return nextThreadId;
     };
 
     const startTurn = async (threadId: string): Promise<void> => {
-      await callAction("turn.start", {
+      const response = await callAction<TurnStartResponse>("turn.start", {
         threadId,
         cwd: selectedCwd || null,
         approvalPolicy,
@@ -179,10 +197,14 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
         input: [
           {
             type: "text",
-            text,
+            text: outgoingText,
             text_elements: [],
           },
         ],
+      });
+      updateOptimisticTurn(optimisticTurnId, {
+        threadId,
+        turnId: response.turn.id,
       });
     };
 
@@ -214,10 +236,12 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
       }
       await startTurn(threadId);
       setComposerError(null);
-      setText("");
     } catch (error) {
       if (!isThreadNotFoundError(error)) {
-        setComposerError(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        setComposerError(message);
+        failOptimisticTurn(optimisticTurnId, message);
+        setText(outgoingText);
         return;
       }
 
@@ -225,9 +249,11 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
         const nextThreadId = await startFreshThread();
         await startTurn(nextThreadId);
         setComposerError(null);
-        setText("");
       } catch (retryError) {
-        setComposerError(retryError instanceof Error ? retryError.message : String(retryError));
+        const message = retryError instanceof Error ? retryError.message : String(retryError);
+        setComposerError(message);
+        failOptimisticTurn(optimisticTurnId, message);
+        setText(outgoingText);
       }
     }
   };
@@ -235,21 +261,28 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
   const steerTurn = async (): Promise<void> => {
     const threadId = snapshot.selectedThreadId;
     const activeTurnId = threadId ? snapshot.threads[threadId]?.activeTurnId : null;
-    if (!threadId || !activeTurnId || !text.trim()) {
+    const outgoingText = text.trim();
+    if (!threadId || !activeTurnId || !outgoingText) {
       return;
     }
-    await callAction("turn.steer", {
-      threadId,
-      expectedTurnId: activeTurnId,
-      input: [
-        {
-          type: "text",
-          text,
-          text_elements: [],
-        },
-      ],
-    });
     setText("");
+    setComposerError(null);
+    try {
+      await callAction("turn.steer", {
+        threadId,
+        expectedTurnId: activeTurnId,
+        input: [
+          {
+            type: "text",
+            text: outgoingText,
+            text_elements: [],
+          },
+        ],
+      });
+    } catch (error) {
+      setText(outgoingText);
+      setComposerError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const interruptTurn = async (): Promise<void> => {

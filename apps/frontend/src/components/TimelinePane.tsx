@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import type { ApprovalRecord, ItemRecord } from "@codex-web/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ApprovalRecord, ItemRecord, TurnRecord } from "@codex-web/shared";
 import { ComposerBar } from "./ComposerBar";
-import { useRuntimeStore } from "../store/useRuntimeStore";
-import { deriveWorkbenchGroups, extractItemBody, threadStats, threadTitle, type WorkbenchEntry, type WorkbenchGroup } from "../lib/workbench";
+import { useRuntimeStore, type OptimisticTurn } from "../store/useRuntimeStore";
+import { deriveWorkbenchGroups, extractItemBody, threadStats, threadTitle, type WorkbenchGroup } from "../lib/workbench";
 import { navigateToRoute } from "../lib/routes";
 
 const typeTone: Record<string, string> = {
@@ -14,6 +14,21 @@ const typeTone: Record<string, string> = {
 };
 
 const isDialogueItem = (item: ItemRecord): boolean => item.type === "userMessage" || item.type === "agentMessage";
+const isStreamingItem = (item: ItemRecord): boolean => item.completedAt === null || item.finalStatus !== "completed";
+const isAssistantWorkItem = (item: ItemRecord): boolean =>
+  item.type === "agentMessage" || item.type === "commandExecution" || item.type === "fileChange";
+
+const isTurnRunning = (turn: TurnRecord): boolean =>
+  turn.completedAt === null && ["pending", "inProgress", "running", "started"].includes(turn.status);
+
+const turnHasUserMessage = (turn: TurnRecord): boolean =>
+  turn.itemOrder.some((itemId) => turn.items[itemId]?.type === "userMessage");
+
+const turnHasAssistantWork = (turn: TurnRecord): boolean =>
+  turn.itemOrder.some((itemId) => {
+    const item = turn.items[itemId];
+    return Boolean(item) && isAssistantWorkItem(item);
+  });
 
 const commandText = (item: ItemRecord): string => {
   if (!item.rawItem || typeof item.rawItem.command !== "string") {
@@ -32,6 +47,15 @@ const itemSummary = (item: ItemRecord): string => {
   }
   return item.finalStatus;
 };
+
+const RunningBadge = ({ label = "Running" }: { label?: string }) => (
+  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
+    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+    {label}
+  </span>
+);
+
+const StreamingCursor = () => <span className="ml-1 inline-block h-4 w-[2px] animate-pulse bg-emerald-300 align-middle" />;
 
 const ApprovalCard = ({ approval }: { approval: ApprovalRecord }) => {
   const { callAction } = useRuntimeStore();
@@ -64,8 +88,43 @@ const ApprovalCard = ({ approval }: { approval: ApprovalRecord }) => {
   );
 };
 
+const AssistantPlaceholder = ({
+  status,
+  error,
+  message = "Codex is thinking...",
+}: {
+  status: OptimisticTurn["status"];
+  error?: string | null;
+  message?: string;
+}) => {
+  if (status === "failed") {
+    return (
+      <div className="rounded-3xl border border-rose-500/25 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
+        <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-rose-200">
+          <span>Send Failed</span>
+        </div>
+        <div>{error || "Request failed before a real turn could start."}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-slate-100">
+      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-emerald-200/90">
+        <span>Codex</span>
+        <RunningBadge label={status === "streaming" ? "Streaming" : "Thinking"} />
+      </div>
+      <div className="flex items-center gap-2 text-sm">
+        <span>{message}</span>
+        <StreamingCursor />
+      </div>
+    </div>
+  );
+};
+
 const CommandEntry = ({ item }: { item: ItemRecord }) => {
   const [open, setOpen] = useState(false);
+  const running = isStreamingItem(item);
   return (
     <details
       open={open}
@@ -75,13 +134,17 @@ const CommandEntry = ({ item }: { item: ItemRecord }) => {
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <div className="truncate font-mono text-sm text-slate-100">{commandText(item)}</div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-500">{itemSummary(item)}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+            <span>{itemSummary(item)}</span>
+            {running && <RunningBadge label="Output Live" />}
+          </div>
         </div>
         <div className="text-xs text-slate-500">{open ? "Hide" : "Show"}</div>
       </summary>
       <div className="border-t border-slate-800 px-4 py-3">
         <pre className="mono-panel scrollbar max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs text-slate-100">
           {extractItemBody(item) || "No command output."}
+          {running && <StreamingCursor />}
         </pre>
       </div>
     </details>
@@ -91,13 +154,17 @@ const CommandEntry = ({ item }: { item: ItemRecord }) => {
 const FileChangeEntry = ({ item }: { item: ItemRecord }) => {
   const [showRaw, setShowRaw] = useState(false);
   const changeCount = Array.isArray(item.rawItem?.changes) ? item.rawItem.changes.length : 0;
+  const running = isStreamingItem(item);
 
   return (
     <div className="rounded-2xl border border-blue-500/20 bg-blue-500/8 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-slate-100">File Changes</div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{changeCount} changes</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+            <span>{changeCount} changes</span>
+            {running && <RunningBadge label="Running" />}
+          </div>
         </div>
         <button className="ghost-btn rounded-full px-3 py-1 text-[11px]" onClick={() => setShowRaw((value) => !value)}>
           {showRaw ? "Hide Diff" : "Show Diff"}
@@ -106,6 +173,7 @@ const FileChangeEntry = ({ item }: { item: ItemRecord }) => {
       {showRaw && (
         <pre className="mono-panel scrollbar mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-2xl p-3 font-mono text-xs text-slate-100">
           {item.aggregatedDeltas.fileChangeOutput || JSON.stringify(item.rawItem, null, 2)}
+          {running && <StreamingCursor />}
         </pre>
       )}
     </div>
@@ -115,13 +183,17 @@ const FileChangeEntry = ({ item }: { item: ItemRecord }) => {
 const GenericItemEntry = ({ item, approvals }: { item: ItemRecord; approvals: ApprovalRecord[] }) => {
   const { selectItem } = useRuntimeStore();
   const [showRaw, setShowRaw] = useState(false);
+  const running = isStreamingItem(item);
 
   return (
     <div className={`rounded-2xl border p-3 ${typeTone[item.type] ?? "surface-card"}`}>
       <div className="flex items-start justify-between gap-3">
         <button className="min-w-0 text-left" onClick={() => selectItem(item.id)}>
           <div className="text-sm font-semibold text-slate-100">{item.type}</div>
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{item.finalStatus}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">
+            <span>{item.finalStatus}</span>
+            {running && <RunningBadge label="Running" />}
+          </div>
         </button>
         <button className="ghost-btn rounded-full px-2 py-1 text-[11px]" onClick={() => setShowRaw((value) => !value)}>
           Raw
@@ -129,6 +201,7 @@ const GenericItemEntry = ({ item, approvals }: { item: ItemRecord; approvals: Ap
       </div>
       <pre className="mono-panel scrollbar mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl p-3 font-mono text-xs text-slate-100">
         {extractItemBody(item)}
+        {running && <StreamingCursor />}
       </pre>
       {showRaw && (
         <pre className="mono-panel scrollbar mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-xl p-3 font-mono text-xs text-slate-100">
@@ -153,6 +226,7 @@ const ItemCard = ({
 
   if (isDialogueItem(item)) {
     const isUser = item.type === "userMessage";
+    const running = !isUser && isStreamingItem(item);
     return (
       <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
         <div
@@ -162,19 +236,24 @@ const ItemCard = ({
               : "w-full border-l-4 border-emerald-400/70 bg-transparent px-4 py-1"
           }`}
         >
-          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] opacity-70">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] opacity-70">
             <span>{isUser ? "You" : "Codex"}</span>
             <span>{item.finalStatus}</span>
+            {running && <RunningBadge label="Streaming" />}
           </div>
           <pre className={`whitespace-pre-wrap break-words font-sans text-sm ${isUser ? "text-stone-50" : "text-slate-100"}`}>
             {body}
+            {running && <StreamingCursor />}
           </pre>
           <div className="mt-3 flex gap-2 text-[11px]">
             <button
               className={`rounded-full border px-2 py-1 ${
                 isUser ? "border-slate-700 text-slate-300" : "border-slate-700 text-slate-400"
               }`}
-              onClick={() => setShowRaw((value) => !value)}
+              onClick={() => {
+                selectItem(item.id);
+                setShowRaw((value) => !value);
+              }}
             >
               Raw
             </button>
@@ -223,20 +302,29 @@ const CodexGroup = ({ group }: { group: WorkbenchGroup }) => {
         entry.item.type !== "commandExecution" &&
         entry.item.type !== "fileChange"),
   );
+  const firstMessageStreaming = firstMessage?.item ? isStreamingItem(firstMessage.item) : false;
 
   return (
     <section className="space-y-4">
       {firstMessage?.item && (
-        <div className="px-2 py-1">
+        <div className="rounded-3xl border border-emerald-500/10 bg-emerald-500/5 px-4 py-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-emerald-200/80">
+            <span>Codex</span>
+            {firstMessageStreaming && <RunningBadge label="Streaming" />}
+          </div>
           <pre className="whitespace-pre-wrap break-words font-sans text-[15px] leading-7 text-slate-100">
             {extractItemBody(firstMessage.item)}
+            {firstMessageStreaming && <StreamingCursor />}
           </pre>
         </div>
       )}
 
       {commandEntries.length > 0 && (
         <div className="space-y-3 rounded-3xl border border-slate-800/90 bg-slate-950/50 px-4 py-3">
-          <div className="text-sm font-semibold text-slate-200">{commandEntries.length} commands</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-200">
+            <span>{commandEntries.length} commands</span>
+            {commandEntries.some((entry) => entry.item && isStreamingItem(entry.item)) && <RunningBadge label="Live Output" />}
+          </div>
           <div className="space-y-2">
             {commandEntries.map((entry) =>
               entry.item ? <CommandEntry key={entry.item.id} item={entry.item} /> : null,
@@ -288,6 +376,80 @@ const WorkbenchGroupView = ({ group }: { group: WorkbenchGroup }) => {
   );
 };
 
+const OptimisticTurnCard = ({ optimisticTurn }: { optimisticTurn: OptimisticTurn }) => (
+  <article className="surface-card rounded-3xl p-4">
+    <div className="mb-3 flex items-center justify-between">
+      <div>
+        <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Pending Turn</div>
+        <strong className="font-mono text-sm text-slate-200">{optimisticTurn.localId}</strong>
+      </div>
+      {optimisticTurn.status !== "failed" ? <RunningBadge label="Waiting" /> : null}
+    </div>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-[26px] border border-slate-700 bg-slate-950 px-4 py-3 text-white shadow-sm">
+          <div className="mb-2 text-[11px] uppercase tracking-[0.2em] opacity-70">You</div>
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm text-stone-50">{optimisticTurn.userText}</pre>
+        </div>
+      </div>
+      <AssistantPlaceholder status={optimisticTurn.status} error={optimisticTurn.error} message={optimisticTurn.assistantPlaceholder} />
+    </div>
+  </article>
+);
+
+const TurnCard = ({
+  turn,
+  approvals,
+  groups,
+  optimisticTurn,
+}: {
+  turn: TurnRecord;
+  approvals: ApprovalRecord[];
+  groups: WorkbenchGroup[];
+  optimisticTurn?: OptimisticTurn;
+}) => {
+  const showOptimisticUser = Boolean(optimisticTurn) && !turnHasUserMessage(turn) && optimisticTurn?.status !== "failed";
+  const showOptimisticAssistant =
+    Boolean(optimisticTurn) &&
+    optimisticTurn?.status !== "failed" &&
+    !turnHasAssistantWork(turn) &&
+    isTurnRunning(turn);
+
+  return (
+    <article className="surface-card rounded-3xl p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Turn</div>
+          <strong className="font-mono text-sm text-slate-200">{turn.id}</strong>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-800 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">{turn.status}</span>
+          {isTurnRunning(turn) && <RunningBadge />}
+        </div>
+      </div>
+      <div className="space-y-5">
+        {showOptimisticUser && (
+          <div className="flex justify-end">
+            <div className="max-w-[85%] rounded-[26px] border border-slate-700 bg-slate-950 px-4 py-3 text-white shadow-sm">
+              <div className="mb-2 text-[11px] uppercase tracking-[0.2em] opacity-70">You</div>
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-stone-50">{optimisticTurn?.userText}</pre>
+            </div>
+          </div>
+        )}
+        {groups.map((group) => (
+          <WorkbenchGroupView key={group.id} group={group} />
+        ))}
+        {showOptimisticAssistant && (
+          <AssistantPlaceholder status={optimisticTurn?.status ?? "sending"} message={optimisticTurn?.assistantPlaceholder} />
+        )}
+        {approvals.length === 0 && turn.itemOrder.length === 0 && !showOptimisticAssistant && (
+          <div className="note-panel rounded-2xl p-4 text-sm">No items recorded for this turn yet.</div>
+        )}
+      </div>
+    </article>
+  );
+};
+
 const TerminalPanel = () => {
   const { snapshot, callAction } = useRuntimeStore();
   const [command, setCommand] = useState("bash");
@@ -308,16 +470,19 @@ const TerminalPanel = () => {
           <p className="text-xs text-slate-500">`command/exec` + `tty: true` + outputDelta</p>
         </div>
         {currentTerminal && (
-          <button
-            className="ghost-btn rounded-full px-3 py-1 text-xs"
-            onClick={() =>
-              void callAction("command.exec.terminate", {
-                processId: currentTerminal.processId,
-              })
-            }
-          >
-            Terminate
-          </button>
+          <div className="flex items-center gap-2">
+            {currentTerminal.status === "running" && <RunningBadge label="TTY Live" />}
+            <button
+              className="ghost-btn rounded-full px-3 py-1 text-xs"
+              onClick={() =>
+                void callAction("command.exec.terminate", {
+                  processId: currentTerminal.processId,
+                })
+              }
+            >
+              Terminate
+            </button>
+          </div>
         )}
       </div>
       <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_120px_120px_auto]">
@@ -343,6 +508,7 @@ const TerminalPanel = () => {
       </div>
       <pre className="mono-panel scrollbar mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-3xl p-4 font-mono text-xs text-stone-100">
         {currentTerminal ? `${currentTerminal.stdout}${currentTerminal.stderr}` : "No PTY session yet."}
+        {currentTerminal?.status === "running" && <StreamingCursor />}
       </pre>
       {currentTerminal && (
         <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
@@ -390,22 +556,66 @@ const TerminalPanel = () => {
 };
 
 export const TimelinePane = ({ routeThreadId }: { routeThreadId?: string | null }) => {
-  const { snapshot, callAction } = useRuntimeStore();
+  const { snapshot, callAction, optimisticTurns } = useRuntimeStore();
   const thread = snapshot.selectedThreadId ? snapshot.threads[snapshot.selectedThreadId] : null;
   const [showTerminal, setShowTerminal] = useState(false);
+  const [followOutput, setFollowOutput] = useState(true);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const stats = threadStats(thread);
+
+  const optimisticThreadTurns = useMemo(() => {
+    if (!thread) {
+      return [];
+    }
+    return optimisticTurns.filter((entry) => entry.threadId === thread.id);
+  }, [optimisticTurns, thread]);
+
+  const optimisticTurnsByTurnId = useMemo(
+    () =>
+      new Map(
+        optimisticThreadTurns
+          .filter((entry) => entry.turnId && thread?.turns[entry.turnId])
+          .map((entry) => [entry.turnId as string, entry]),
+      ),
+    [optimisticThreadTurns, thread],
+  );
+
+  const standaloneOptimisticTurns = useMemo(() => {
+    if (!thread) {
+      return [];
+    }
+    return optimisticThreadTurns.filter((entry) => !entry.turnId || !thread.turns[entry.turnId]);
+  }, [optimisticThreadTurns, thread]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !followOutput) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  }, [followOutput, optimisticThreadTurns, snapshot.lastUpdatedAt]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) {
+      return;
+    }
+    setFollowOutput(element.scrollHeight - element.scrollTop - element.clientHeight < 120);
+  }, [thread?.id]);
 
   if (!thread) {
     return (
       <section className="panel min-w-0 rounded-3xl p-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
         <div className="note-panel rounded-3xl p-8 text-sm">
           {routeThreadId
-            ? `Route points to thread ${routeThreadId}, but it is not loaded in the local projection yet. Use thread/read or thread/resume from the left pane.`
+            ? `Route points to thread ${routeThreadId}, but it is not loaded in the local projection yet. Use thread/read or resume it before relying on local history.`
             : "Select a thread from the left column. Thread pages render a workbench projection over `thread / turn / item`, not synthetic assistant bubbles."}
         </div>
-        <div className="mt-4 note-panel rounded-3xl p-4 text-sm">
-          输入框已经移到 thread 工作区里。先从左侧打开一个线程，或者新建 thread 后再开始 turn。
-        </div>
+        {routeThreadId && (
+          <div className="mt-4">
+            <ComposerBar embedded />
+          </div>
+        )}
       </section>
     );
   }
@@ -419,6 +629,7 @@ export const TimelinePane = ({ routeThreadId }: { routeThreadId?: string | null 
         </div>
         <div className="flex flex-wrap items-center gap-2 text-right">
           <div className="rounded-full bg-slate-900 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">{thread.status}</div>
+          {thread.activeTurnId && <RunningBadge />}
           <div className="rounded-full bg-slate-900 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">{stats.turns} turns</div>
           <div className="rounded-full bg-slate-900 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">{stats.items} items</div>
           <button
@@ -451,8 +662,18 @@ export const TimelinePane = ({ routeThreadId }: { routeThreadId?: string | null 
         </div>
       </div>
 
-      <div className="scrollbar space-y-4 pr-1 lg:flex-1 lg:overflow-y-auto">
-        {thread.turnOrder.length === 0 && (
+      <div
+        ref={scrollRef}
+        onScroll={() => {
+          const element = scrollRef.current;
+          if (!element) {
+            return;
+          }
+          setFollowOutput(element.scrollHeight - element.scrollTop - element.clientHeight < 120);
+        }}
+        className="scrollbar space-y-4 pr-1 lg:flex-1 lg:overflow-y-auto"
+      >
+        {thread.turnOrder.length === 0 && standaloneOptimisticTurns.length === 0 && (
           <div className="note-panel rounded-3xl p-6 text-sm">
             History not loaded. Use `thread/read` or `thread/resume`.
           </div>
@@ -462,25 +683,18 @@ export const TimelinePane = ({ routeThreadId }: { routeThreadId?: string | null 
           const approvals = turn.pendingApprovals.map((requestId) => snapshot.approvals[requestId]).filter(Boolean);
           const groups = deriveWorkbenchGroups(turn, snapshot.approvals);
           return (
-            <article key={turnId} className="surface-card rounded-3xl p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Turn</div>
-                  <strong className="font-mono text-sm text-slate-200">{turn.id}</strong>
-                </div>
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">{turn.status}</span>
-              </div>
-              <div className="space-y-5">
-                {groups.map((group) => (
-                  <WorkbenchGroupView key={group.id} group={group} />
-                ))}
-                {approvals.length === 0 && turn.itemOrder.length === 0 && (
-                  <div className="note-panel rounded-2xl p-4 text-sm">No items recorded for this turn.</div>
-                )}
-              </div>
-            </article>
+            <TurnCard
+              key={turnId}
+              turn={turn}
+              approvals={approvals}
+              groups={groups}
+              optimisticTurn={optimisticTurnsByTurnId.get(turnId)}
+            />
           );
         })}
+        {standaloneOptimisticTurns.map((optimisticTurn) => (
+          <OptimisticTurnCard key={optimisticTurn.localId} optimisticTurn={optimisticTurn} />
+        ))}
       </div>
 
       <div className="mt-4 space-y-4">

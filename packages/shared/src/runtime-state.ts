@@ -594,25 +594,23 @@ const appendCapped = (value: string, chunk: string): { output: string; truncated
   };
 };
 
-export const reduceRuntimeEvent = (snapshot: RuntimeSnapshot, event: RuntimeEvent): RuntimeSnapshot => {
-  if (event.type === "snapshot/hydrated") {
-    return {
-      ...event.snapshot,
-      lastUpdatedAt: Date.now(),
-    };
-  }
+const cloneSnapshotForReduction = (snapshot: RuntimeSnapshot): RuntimeSnapshot => ({
+  ...snapshot,
+  threads: { ...snapshot.threads },
+  approvals: { ...snapshot.approvals },
+  terminals: { ...snapshot.terminals },
+  eventLog: [...snapshot.eventLog],
+  unknownEvents: [...snapshot.unknownEvents],
+  notes: [...snapshot.notes],
+  runtime: { ...snapshot.runtime },
+  lastUpdatedAt: Date.now(),
+});
 
-  const next = {
-    ...snapshot,
-    threads: { ...snapshot.threads },
-    approvals: { ...snapshot.approvals },
-    terminals: { ...snapshot.terminals },
-    eventLog: [...snapshot.eventLog],
-    unknownEvents: [...snapshot.unknownEvents],
-    notes: [...snapshot.notes],
-    runtime: { ...snapshot.runtime },
-    lastUpdatedAt: Date.now(),
-  };
+const applyRuntimeEventToSnapshot = (next: RuntimeSnapshot, event: RuntimeEvent): RuntimeSnapshot => {
+  if (event.type === "snapshot/hydrated") {
+    return cloneSnapshotForReduction(event.snapshot);
+  }
+  next.lastUpdatedAt = Date.now();
 
   switch (event.type) {
     case "runtime/error":
@@ -796,8 +794,19 @@ export const reduceRuntimeEvent = (snapshot: RuntimeSnapshot, event: RuntimeEven
   }
 };
 
-export const reduceRuntimeEvents = (snapshot: RuntimeSnapshot, events: RuntimeEvent[]): RuntimeSnapshot =>
-  events.reduce((acc, event) => reduceRuntimeEvent(acc, event), snapshot);
+export const reduceRuntimeEvent = (snapshot: RuntimeSnapshot, event: RuntimeEvent): RuntimeSnapshot =>
+  applyRuntimeEventToSnapshot(cloneSnapshotForReduction(snapshot), event);
+
+export const reduceRuntimeEvents = (snapshot: RuntimeSnapshot, events: RuntimeEvent[]): RuntimeSnapshot => {
+  if (events.length === 0) {
+    return snapshot;
+  }
+  let next = cloneSnapshotForReduction(snapshot);
+  for (const event of events) {
+    next = applyRuntimeEventToSnapshot(next, event);
+  }
+  return next;
+};
 
 export const getSelectedThread = (snapshot: RuntimeSnapshot): ThreadRecord | null =>
   snapshot.selectedThreadId ? snapshot.threads[snapshot.selectedThreadId] ?? null : null;

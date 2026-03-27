@@ -20,7 +20,7 @@ import type { JsonRpcNotificationMessage, JsonRpcRequestMessage, JsonRpcResponse
 import { JsonRpcClient } from "../jsonRpc.js";
 import { appConfig, appServerStderrLogFile, generatedSchemaDir, rootDir } from "../config.js";
 import { appendRawLog, logger } from "../logger.js";
-import { loadSnapshot, saveSnapshot } from "../persistence.js";
+import { loadSnapshot, SnapshotPersistence } from "../persistence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,6 +60,7 @@ const isStaleThreadError = (message: string): boolean => {
 
 export class RuntimeManager {
   private snapshot: RuntimeSnapshot = createEmptySnapshot();
+  private readonly persistence = new SnapshotPersistence();
   private rpc: JsonRpcClient | null = null;
   private broadcast: Broadcast = () => {};
   private restartTimer: NodeJS.Timeout | null = null;
@@ -143,10 +144,34 @@ export class RuntimeManager {
     };
   }
 
+  async flushSnapshot(): Promise<void> {
+    await this.persistence.flush();
+  }
+
   private applyEvents(events: RuntimeEvent[]): void {
     this.snapshot = reduceRuntimeEvents(this.snapshot, events);
-    saveSnapshot(this.snapshot);
     this.broadcast(events);
+    this.persistence.schedule(this.snapshot, {
+      immediate: this.shouldFlushImmediately(events),
+    });
+  }
+
+  private shouldFlushImmediately(events: RuntimeEvent[]): boolean {
+    return events.some((event) => {
+      switch (event.type) {
+        case "turn/merged":
+          return event.kind === "completed";
+        case "item/completed":
+        case "approval/resolved":
+        case "thread/status":
+        case "thread/removed":
+        case "terminal/completed":
+        case "runtime/error":
+          return true;
+        default:
+          return false;
+      }
+    });
   }
 
   private async ensureCodexReady(): Promise<void> {

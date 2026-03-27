@@ -61,6 +61,33 @@ const main = async (): Promise<void> => {
     url: server,
     ws: `ws://${appConfig.host}:${appConfig.port}/ws`,
   });
+
+  let shuttingDown = false;
+  const flushOnExit = async (signal?: NodeJS.Signals) => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    try {
+      await runtime.flushSnapshot();
+    } finally {
+      await app.close();
+      ws.close();
+      if (signal) {
+        process.exit(0);
+      }
+    }
+  };
+
+  process.once("SIGINT", () => {
+    void flushOnExit("SIGINT");
+  });
+  process.once("SIGTERM", () => {
+    void flushOnExit("SIGTERM");
+  });
+  process.once("beforeExit", () => {
+    void flushOnExit();
+  });
 };
 
 main().catch((error) => {
