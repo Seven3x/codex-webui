@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { exportThreadEvents } from "../lib/api";
 import { resolveDebugPreferences } from "../lib/debugPreferences";
 import { navigateToRoute } from "../lib/routes";
@@ -67,6 +67,8 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [openMenuThreadId, setOpenMenuThreadId] = useState<string | null>(null);
+  const activeMenuRef = useRef<HTMLDivElement | null>(null);
 
   const cwdOptions = useMemo(
     () =>
@@ -135,6 +137,31 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
     void fetchThreads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!openMenuThreadId) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | PointerEvent) => {
+      if (activeMenuRef.current && !activeMenuRef.current.contains(event.target as Node)) {
+        setOpenMenuThreadId(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenuThreadId(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openMenuThreadId]);
 
   const runThreadAction = async <T,>(
     action: string,
@@ -276,7 +303,7 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
           placeholder="Search threads"
           className={`surface-soft w-full rounded-[18px] ${isMobile ? "px-3.5 py-3 text-[15px]" : "px-3 py-2 text-sm"}`}
         />
-        <div className={`grid gap-2 ${isMobile ? "grid-cols-1" : "md:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
+        <div className="grid gap-2">
           <div>
             <input
               list="thread-cwd-options"
@@ -291,15 +318,17 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
               ))}
             </datalist>
           </div>
-          <button className={`ghost-btn rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"}`} onClick={() => void fetchThreads()}>
-            Refresh
-          </button>
-          <button
-            className={`rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"} ${showArchived ? "bg-rose-500/12 text-rose-200 ring-1 ring-rose-400/20" : "ghost-btn"}`}
-            onClick={() => setShowArchived((value) => !value)}
-          >
-            Archived
-          </button>
+          <div className={`flex gap-2 ${isMobile ? "flex-col" : "flex-wrap"}`}>
+            <button className={`ghost-btn rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"}`} onClick={() => void fetchThreads()}>
+              Refresh
+            </button>
+            <button
+              className={`rounded-[18px] ${isMobile ? "px-3 py-3 text-sm" : "px-3 py-2 text-xs"} ${showArchived ? "bg-rose-500/12 text-rose-200 ring-1 ring-rose-400/20" : "ghost-btn"}`}
+              onClick={() => setShowArchived((value) => !value)}
+            >
+              Archived
+            </button>
+          </div>
         </div>
         {actionMessage && (
           <div className="rounded-[16px] bg-white/[0.025] px-3 py-2 text-xs text-slate-400 ring-1 ring-white/6">
@@ -351,33 +380,74 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
                       </div>
                     </button>
 
-                    <details className={`relative shrink-0 ${isMobile ? "mr-2 mt-2.5" : "mr-2 mt-2"}`}>
-                      <summary
-                        className={`flex cursor-pointer list-none items-center justify-center rounded-full text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200 ${isMobile ? "h-9 w-9 text-base" : "h-7 w-7 text-sm"}`}
-                        onClick={(event) => event.stopPropagation()}
+                    <div
+                      ref={openMenuThreadId === thread.id ? activeMenuRef : null}
+                      className={`relative shrink-0 ${isMobile ? "mr-2 mt-2.5" : "mr-2 mt-2"}`}
+                    >
+                      <button
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={openMenuThreadId === thread.id}
+                        className={`flex items-center justify-center rounded-full text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200 ${isMobile ? "h-9 w-9 text-base" : "h-7 w-7 text-sm"}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenMenuThreadId((current) => (current === thread.id ? null : thread.id));
+                        }}
                       >
                         ...
-                      </summary>
-                      <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void openThread(thread.id, { preferReadOnly: true })}>
-                          Read
-                        </button>
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void resumeThread(thread.id)}>
-                          Resume
-                        </button>
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void forkThread(thread.id)}>
-                          Fork
-                        </button>
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void archiveThread(thread.id)}>
-                          Archive
-                        </button>
-                        {debug.showRawEventControls && (
-                          <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void exportThreadEvents(thread.id)}>
-                            Export
+                      </button>
+                      {openMenuThreadId === thread.id && (
+                        <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
+                          <button
+                            className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+                            onClick={() => {
+                              setOpenMenuThreadId(null);
+                              void openThread(thread.id, { preferReadOnly: true });
+                            }}
+                          >
+                            Read
                           </button>
-                        )}
-                      </div>
-                    </details>
+                          <button
+                            className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+                            onClick={() => {
+                              setOpenMenuThreadId(null);
+                              void resumeThread(thread.id);
+                            }}
+                          >
+                            Resume
+                          </button>
+                          <button
+                            className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+                            onClick={() => {
+                              setOpenMenuThreadId(null);
+                              void forkThread(thread.id);
+                            }}
+                          >
+                            Fork
+                          </button>
+                          <button
+                            className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+                            onClick={() => {
+                              setOpenMenuThreadId(null);
+                              void archiveThread(thread.id);
+                            }}
+                          >
+                            Archive
+                          </button>
+                          {debug.showRawEventControls && (
+                            <button
+                              className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+                              onClick={() => {
+                                setOpenMenuThreadId(null);
+                                void exportThreadEvents(thread.id);
+                              }}
+                            >
+                              Export
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
