@@ -110,6 +110,16 @@ let pendingSocketEvents: RuntimeEvent[] = [];
 let pendingEventsFrame: number | null = null;
 let pendingEventsTimeout: number | null = null;
 
+const runtimeWebSocketUrl = (): string => {
+  if (typeof window === "undefined") {
+    return "ws://127.0.0.1:8787/ws";
+  }
+  if (import.meta.env.DEV) {
+    return "ws://127.0.0.1:8787/ws";
+  }
+  return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
+};
+
 const clearPendingEventFlush = (): void => {
   if (typeof window === "undefined") {
     pendingSocketEvents = [];
@@ -385,7 +395,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     clearPendingEventFlush();
     pendingSocketEvents = [];
     set({ socketState: "connecting" });
-    socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);
+    socket = new WebSocket(runtimeWebSocketUrl());
     socket.onopen = () => {
       set({ socketState: "open" });
     };

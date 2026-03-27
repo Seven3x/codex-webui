@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { exportThreadEvents } from "../lib/api";
+import { resolveDebugPreferences } from "../lib/debugPreferences";
 import { navigateToRoute } from "../lib/routes";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
@@ -58,7 +60,8 @@ const matchesSearch = (
 };
 
 export const ThreadsPane = () => {
-  const { snapshot, selectThread, callAction, selectedCwd, setSelectedCwd } = useRuntimeStore();
+  const { snapshot, selectThread, callAction, selectedCwd, setSelectedCwd, debugPreferences } = useRuntimeStore();
+  const debug = useMemo(() => resolveDebugPreferences(debugPreferences), [debugPreferences]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -164,6 +167,49 @@ export const ThreadsPane = () => {
     );
   };
 
+  const resumeThread = async (threadId: string) => {
+    await runThreadAction<{ thread: { id: string } }>(
+      "thread.resume",
+      {
+        threadId,
+        persistExtendedHistory: true,
+      },
+      (response) => {
+        const nextThreadId = response.thread.id;
+        selectThread(nextThreadId);
+        navigateToRoute({ name: "thread", threadId: nextThreadId });
+      },
+      "Resumed thread.",
+    );
+  };
+
+  const forkThread = async (threadId: string) => {
+    await runThreadAction<{ thread: { id: string } }>(
+      "thread.fork",
+      {
+        threadId,
+        persistExtendedHistory: true,
+      },
+      (response) => {
+        const nextThreadId = response.thread.id;
+        selectThread(nextThreadId);
+        navigateToRoute({ name: "thread", threadId: nextThreadId });
+      },
+      "Forked thread.",
+    );
+  };
+
+  const archiveThread = async (threadId: string) => {
+    await runThreadAction(
+      "thread.archive",
+      {
+        threadId,
+      },
+      undefined,
+      "Archived thread.",
+    );
+  };
+
   return (
     <aside className="panel min-w-0 rounded-[30px] p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
       <div className="flex items-start justify-between gap-3">
@@ -227,7 +273,7 @@ export const ThreadsPane = () => {
           </button>
         </div>
         {actionMessage && (
-          <div className="rounded-[18px] bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
+          <div className="rounded-[16px] bg-white/[0.025] px-3 py-2 text-xs text-slate-400 ring-1 ring-white/6">
             {actionMessage}
           </div>
         )}
@@ -259,26 +305,51 @@ export const ThreadsPane = () => {
               return (
                 <div
                   key={thread.id}
-                  className={`group relative rounded-[24px] transition ${
-                    selected ? "bg-rose-500/[0.11] shadow-[0_0_0_1px_rgba(251,113,133,0.15)]" : "bg-white/[0.025] hover:bg-white/[0.045]"
+                  className={`group relative rounded-[18px] transition ${
+                    selected ? "bg-rose-500/[0.10] shadow-[0_0_0_1px_rgba(251,113,133,0.14)]" : "bg-white/[0.018] hover:bg-white/[0.04]"
                   }`}
                 >
-                  <button
-                    className="block w-full rounded-[24px] px-3 py-3 text-left"
-                    title={thread.id}
-                    onClick={() => openThread(thread.id)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-slate-100">{threadTitle(thread)}</div>
-                        <p className="mt-1 truncate text-xs text-slate-400">{threadPreview(thread)}</p>
-                        <div className="mt-2 truncate text-[11px] text-slate-500">{metaBits.join(" • ") || (thread.cwd ?? "No workspace")}</div>
+                  <div className="flex items-start gap-2">
+                    <button
+                      className="block min-w-0 flex-1 rounded-[18px] px-3 py-2.5 text-left"
+                      title={thread.id}
+                      onClick={() => openThread(thread.id)}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium text-slate-100">{threadTitle(thread)}</div>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-400">{threadPreview(thread)}</p>
+                        <div className="mt-1 truncate text-[10px] text-slate-500">{metaBits.join(" • ") || (thread.cwd ?? "No workspace")}</div>
                       </div>
-                      <div className="status-chip shrink-0">
-                        <span className="text-slate-200">{statusLabel(thread.summary?.status)}</span>
+                    </button>
+
+                    <details className="relative mr-2 mt-2 shrink-0">
+                      <summary
+                        className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full text-sm text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        ...
+                      </summary>
+                      <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
+                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => openThread(thread.id)}>
+                          Read
+                        </button>
+                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void resumeThread(thread.id)}>
+                          Resume
+                        </button>
+                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void forkThread(thread.id)}>
+                          Fork
+                        </button>
+                        <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void archiveThread(thread.id)}>
+                          Archive
+                        </button>
+                        {debug.showRawEventControls && (
+                          <button className="ghost-btn rounded-[12px] px-3 py-1.5 text-left text-xs" onClick={() => void exportThreadEvents(thread.id)}>
+                            Export
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  </button>
+                    </details>
+                  </div>
                 </div>
               );
             })}

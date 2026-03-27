@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalRecord, ItemRecord, TurnRecord } from "@codex-web/shared";
 import { ComposerBar } from "./ComposerBar";
+import { MarkdownText } from "./MarkdownText";
 import type { ResolvedDebugPreferences } from "../lib/debugPreferences";
 import { deriveWorkbenchGroups, extractItemBody, threadStats, threadTitle, type WorkbenchGroup } from "../lib/workbench";
 import { navigateToRoute } from "../lib/routes";
@@ -11,7 +12,7 @@ const typeTone: Record<string, string> = {
   enteredReviewMode: "bg-fuchsia-500/[0.06] ring-1 ring-fuchsia-400/15",
   exitedReviewMode: "bg-fuchsia-500/[0.06] ring-1 ring-fuchsia-400/15",
   plan: "bg-emerald-500/[0.06] ring-1 ring-emerald-400/15",
-  reasoning: "bg-amber-500/[0.06] ring-1 ring-amber-400/15",
+  reasoning: "bg-white/[0.018] ring-1 ring-white/[0.05]",
 };
 
 const isDialogueItem = (item: ItemRecord): boolean => item.type === "userMessage" || item.type === "agentMessage";
@@ -66,6 +67,33 @@ const itemSummary = (item: ItemRecord): string => {
     return `${item.rawItem.changes.length} changes`;
   }
   return item.finalStatus;
+};
+
+const commandExitCode = (item: ItemRecord): number | null =>
+  typeof item.rawItem?.exitCode === "number" ? item.rawItem.exitCode : null;
+
+const commandStatusSummary = (items: ItemRecord[]): string => {
+  const running = items.some((item) => isStreamingItem(item));
+  const failedCount = items.filter((item) => {
+    const exitCode = commandExitCode(item);
+    return item.finalStatus === "failed" || item.finalStatus === "declined" || (typeof exitCode === "number" && exitCode !== 0);
+  }).length;
+
+  if (failedCount > 0) {
+    return items.length === 1 ? "Command failed" : `${failedCount} of ${items.length} commands failed`;
+  }
+  if (running) {
+    return items.length === 1 ? "Running command" : `Running ${items.length} commands`;
+  }
+  return `Ran ${items.length} command${items.length === 1 ? "" : "s"}`;
+};
+
+const fileChangeSummary = (item: ItemRecord): string => {
+  const changeCount = Array.isArray(item.rawItem?.changes) ? item.rawItem.changes.length : 0;
+  if (isStreamingItem(item)) {
+    return changeCount > 0 ? `Editing ${changeCount} files` : "Editing files";
+  }
+  return `Edited ${changeCount || 1} file${changeCount === 1 ? "" : "s"}`;
 };
 
 const bodyPreview = (item: ItemRecord, maxLength = 140): string => {
@@ -228,8 +256,8 @@ const AssistantMessage = ({
           {debug.showInspectControls && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
         </div>
       </div>
-      <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-100">
-        {extractItemBody(item)}
+      <div className="break-words text-[15px] leading-7 text-slate-100">
+        <MarkdownText text={extractItemBody(item)} className="assistant-message" />
         {running && <StreamingCursor />}
       </div>
     </article>
@@ -279,30 +307,25 @@ const CommandCluster = ({
 }) => {
   const [open, setOpen] = useState(false);
   const running = items.some((item) => isStreamingItem(item));
-  const summary = compactText(items.map((item) => commandText(item)).join("  •  "), 180);
+  const summary = commandStatusSummary(items);
 
   return (
     <details
       open={open}
       onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
-      className="rounded-[18px] bg-white/[0.025] px-3.5 py-3 ring-1 ring-white/6"
+      className="rounded-[16px] bg-white/[0.018] px-3 py-2.5 ring-1 ring-white/[0.05]"
     >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-100">
-            <span>{`Ran ${items.length} command${items.length === 1 ? "" : "s"}`}</span>
-            {running && <RunningBadge label="Live output" />}
+          <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-slate-300">
+            <span>{summary}</span>
+            {running && <RunningBadge label="Live" />}
           </div>
-          <div className="mt-1 font-mono text-xs text-slate-400">{summary}</div>
-          {!open && (
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              {compactText(items.map((item) => bodyPreview(item, 80)).join(" "), 180)}
-            </p>
-          )}
+          {open && <div className="mt-1 font-mono text-xs text-slate-500">{compactText(items.map((item) => commandText(item)).join("  •  "), 200)}</div>}
         </div>
         <div className="flex items-center gap-2">
           {debug.showItemTypeBadges && <MetaBadge>commandExecution</MetaBadge>}
-          {debug.showInspectControls && items.length === 1 && (
+          {debug.showInspectControls && items.length === 1 && open && (
             <DebugActionButton onClick={() => onInspectItem(items[0].id)} label="Inspect" />
           )}
           <span className="text-xs text-slate-500">{open ? "Hide" : "Show"}</span>
@@ -319,6 +342,9 @@ const CommandCluster = ({
                   <MetaBadge>{itemSummary(item)}</MetaBadge>
                   {debug.showInspectControls && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                {typeof commandExitCode(item) === "number" && <span>{`Exit ${commandExitCode(item)}`}</span>}
               </div>
               <pre className="mono-panel scrollbar max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
                 {extractItemBody(item) || "No command output."}
@@ -350,25 +376,24 @@ const FileChangeEntry = ({
   onInspectItem: (itemId: string) => void;
 }) => {
   const [open, setOpen] = useState(false);
-  const changeCount = Array.isArray(item.rawItem?.changes) ? item.rawItem.changes.length : 0;
 
   return (
     <details
       open={open}
       onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
-      className="rounded-[18px] bg-blue-500/[0.06] px-3.5 py-3 ring-1 ring-blue-400/15"
+      className="rounded-[16px] bg-blue-500/[0.045] px-3 py-2.5 ring-1 ring-blue-400/12"
     >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-100">
-            <span>{`Applied ${changeCount || 1} file change${changeCount === 1 ? "" : "s"}`}</span>
-            {isStreamingItem(item) && <RunningBadge label="Updating" />}
+          <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-slate-300">
+            <span>{fileChangeSummary(item)}</span>
+            {isStreamingItem(item) && <RunningBadge label="Live" />}
           </div>
-          {!open && <p className="mt-2 text-sm leading-6 text-slate-300">{bodyPreview(item, 180)}</p>}
+          {open && <p className="mt-1 text-sm leading-6 text-slate-400">{bodyPreview(item, 180)}</p>}
         </div>
         <div className="flex items-center gap-2">
           {debug.showItemTypeBadges && <MetaBadge>{item.type}</MetaBadge>}
-          {debug.showInspectControls && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
+          {debug.showInspectControls && open && <DebugActionButton onClick={() => onInspectItem(item.id)} label="Inspect" />}
           <span className="text-xs text-slate-500">{open ? "Hide" : "Show"}</span>
         </div>
       </summary>
@@ -414,11 +439,11 @@ const GenericItemEntry = ({
       <details
         open={open}
         onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
-        className={`rounded-[18px] px-3.5 py-3 ${subduedTone}`}
+        className={`rounded-[16px] px-3 py-2.5 ${subduedTone}`}
       >
         <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm font-medium text-slate-100">
+            <div className="text-[13px] font-medium text-slate-300">
               {isReasoningItem && !debug.showReasoningBlocks ? "Reasoning available" : humanizeType(item.type)}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -426,8 +451,8 @@ const GenericItemEntry = ({
               {running && <RunningBadge label="Running" />}
             </div>
             {!open && (
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                {isReasoningItem && !debug.showReasoningBlocks ? "Hidden by default in conversation mode." : bodyPreview(item, isReasoningItem ? 180 : 140)}
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                {isReasoningItem && !debug.showReasoningBlocks ? "" : bodyPreview(item, isReasoningItem ? 180 : 140)}
               </p>
             )}
           </div>

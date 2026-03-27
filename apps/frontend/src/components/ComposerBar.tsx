@@ -332,8 +332,8 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
               className="min-h-[74px] w-full rounded-[20px] border border-white/8 bg-white/[0.025] px-4 py-3 text-[15px] leading-6"
             />
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{selectedThread ? (selectedThread.historyState === "resumed" ? "Replying in this thread" : "Send will resume this thread") : "Send starts a new thread"}</span>
-              {activeTurnId && <span>{debug.debugMode ? `Active turn ${activeTurnId.slice(0, 8)}` : "Generation in progress"}</span>}
+              <span>{selectedThread ? "Reply in the current conversation" : "Send starts a new conversation"}</span>
+              {activeTurnId && <span>{debug.debugMode ? `Active turn ${activeTurnId.slice(0, 8)}` : "Generating"}</span>}
             </div>
           </div>
 
@@ -348,20 +348,24 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("model")}>
-              {selectedModelMeta?.displayName || model || "Auto model"}
-            </button>
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("effort")}>
-              {effort || selectedModelMeta?.defaultReasoningEffort || "Auto effort"}
-            </button>
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("approval")}>
-              {approvalOptions.find((option) => option.value === approvalPolicy)?.label || "Approval"}
-            </button>
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("personality")}>
-              {personalityOptions.find((option) => option.value === personality)?.label || "Style"}
-            </button>
+            {debug.debugMode ? (
+              <>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("model")}>
+                  {selectedModelMeta?.displayName || model || "Auto model"}
+                </button>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("effort")}>
+                  {effort || selectedModelMeta?.defaultReasoningEffort || "Auto effort"}
+                </button>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("approval")}>
+                  {approvalOptions.find((option) => option.value === approvalPolicy)?.label || "Approval"}
+                </button>
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("personality")}>
+                  {personalityOptions.find((option) => option.value === personality)?.label || "Style"}
+                </button>
+              </>
+            ) : null}
             <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => setShowControls((value) => !value)}>
-              {showControls ? "Less" : "More"}
+              {showControls ? "Hide controls" : "Controls"}
             </button>
           </div>
 

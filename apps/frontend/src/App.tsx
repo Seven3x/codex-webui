@@ -66,7 +66,10 @@ const App = () => {
       ];
     }
 
-    const badges: Array<{ label: string; value: string }> = [{ label: "Status", value: snapshot.runtime.connectionState }];
+    const badges: Array<{ label: string; value: string }> = [];
+    if (snapshot.runtime.connectionState !== "ready") {
+      badges.push({ label: "Status", value: snapshot.runtime.connectionState });
+    }
     if (snapshot.runtime.pendingServerRequests.length > 0) {
       badges.push({ label: "Approvals", value: String(snapshot.runtime.pendingServerRequests.length) });
     }
@@ -94,7 +97,9 @@ const App = () => {
       <header className="panel rounded-[30px] px-5 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="text-[11px] font-medium tracking-[0.22em] text-slate-500">Codex protocol-faithful client</div>
+            <div className="text-[11px] font-medium tracking-[0.22em] text-slate-500">
+              {debug.debugMode ? "Codex protocol-faithful client" : "Conversation workspace"}
+            </div>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <h1 className="text-[28px] font-semibold tracking-tight text-slate-50">{pageTitle}</h1>
               {showThreadWorkbench && debug.debugMode && <div className="status-chip text-slate-200">Debug Mode</div>}
@@ -121,14 +126,16 @@ const App = () => {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {headerBadges.map((badge) => (
-                <div key={badge.label} className="status-chip">
-                  <span className="text-slate-500">{badge.label}</span>
-                  <span className="text-slate-200">{badge.value}</span>
-                </div>
-              ))}
-            </div>
+            {headerBadges.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {headerBadges.map((badge) => (
+                  <div key={badge.label} className="status-chip">
+                    <span className="text-slate-500">{badge.label}</span>
+                    <span className="text-slate-200">{badge.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </header>
