@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { exportThreadEvents } from "../lib/api";
 import { navigateToRoute } from "../lib/routes";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
@@ -151,6 +150,20 @@ export const ThreadsPane = () => {
     }
   };
 
+  const openThread = (threadId: string) => {
+    selectThread(threadId);
+    navigateToRoute({ name: "thread", threadId });
+    void runThreadAction(
+      "thread.read",
+      {
+        threadId,
+        includeTurns: true,
+      },
+      undefined,
+      "Loaded thread history.",
+    );
+  };
+
   return (
     <aside className="panel min-w-0 rounded-[30px] p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
       <div className="flex items-start justify-between gap-3">
@@ -251,12 +264,9 @@ export const ThreadsPane = () => {
                   }`}
                 >
                   <button
-                    className="block w-full rounded-[24px] px-3 py-3 pr-20 text-left"
+                    className="block w-full rounded-[24px] px-3 py-3 text-left"
                     title={thread.id}
-                    onClick={() => {
-                      selectThread(thread.id);
-                      navigateToRoute({ name: "thread", threadId: thread.id });
-                    }}
+                    onClick={() => openThread(thread.id)}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -269,101 +279,6 @@ export const ThreadsPane = () => {
                       </div>
                     </div>
                   </button>
-
-                  <div
-                    className={`absolute right-2 top-2 flex flex-wrap gap-1 rounded-full bg-[rgba(12,14,18,0.86)] p-1 shadow-lg transition ${
-                      selected ? "opacity-100" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
-                    }`}
-                  >
-                    <button
-                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void runThreadAction(
-                          "thread.read",
-                          {
-                            threadId: thread.id,
-                            includeTurns: true,
-                          },
-                          () => {
-                            selectThread(thread.id);
-                            navigateToRoute({ name: "thread", threadId: thread.id });
-                          },
-                          "Loaded thread history.",
-                        );
-                      }}
-                    >
-                      Read
-                    </button>
-                    <button
-                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void runThreadAction<{ thread: { id: string } }>(
-                          "thread.resume",
-                          {
-                            threadId: thread.id,
-                            persistExtendedHistory: true,
-                          },
-                          (response) => {
-                            selectThread(response.thread.id);
-                            navigateToRoute({ name: "thread", threadId: response.thread.id });
-                          },
-                          "Thread resumed and ready for new turns.",
-                        );
-                      }}
-                    >
-                      Resume
-                    </button>
-                    <button
-                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void runThreadAction<{ thread?: { id?: string } }>(
-                          "thread.fork",
-                          {
-                            threadId: thread.id,
-                            persistExtendedHistory: true,
-                          },
-                          (response) => {
-                            const nextThreadId = String(response.thread?.id ?? "");
-                            if (nextThreadId) {
-                              selectThread(nextThreadId);
-                              navigateToRoute({ name: "thread", threadId: nextThreadId });
-                            }
-                          },
-                          "Forked thread into a new working copy.",
-                        );
-                      }}
-                    >
-                      Fork
-                    </button>
-                    <button
-                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void runThreadAction(
-                          "thread.archive",
-                          {
-                            threadId: thread.id,
-                          },
-                          undefined,
-                          "Archived thread.",
-                        );
-                      }}
-                    >
-                      Archive
-                    </button>
-                    <button
-                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void exportThreadEvents(thread.id);
-                      }}
-                    >
-                      Export
-                    </button>
-                  </div>
                 </div>
               );
             })}

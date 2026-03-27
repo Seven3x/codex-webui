@@ -4,6 +4,7 @@ import { ComposerBar } from "./ComposerBar";
 import { useRuntimeStore, type OptimisticTurn } from "../store/useRuntimeStore";
 import { deriveWorkbenchGroups, extractItemBody, threadStats, threadTitle, type WorkbenchGroup } from "../lib/workbench";
 import { navigateToRoute } from "../lib/routes";
+import { exportThreadEvents } from "../lib/api";
 
 type WorkbenchViewMode = "focus" | "inspect";
 
@@ -69,6 +70,14 @@ const bodyPreview = (item: ItemRecord, maxLength = 140): string => {
     return "No rendered details.";
   }
   return compactText(body, maxLength);
+};
+
+const commandPreview = (item: ItemRecord): string => {
+  const body = extractItemBody(item);
+  if (!body) {
+    return "No command output yet.";
+  }
+  return compactText(body, 120);
 };
 
 const RunningBadge = ({ label = "Running" }: { label?: string }) => (
@@ -186,25 +195,31 @@ const DialogueBubble = ({
   return (
     <div className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`relative max-w-[86%] rounded-[28px] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)] ${
+        className={`relative max-w-[86%] rounded-[24px] px-4 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] ${
           isUser
             ? "bg-slate-100/[0.09] text-slate-50 ring-1 ring-white/8"
             : "bg-emerald-500/[0.06] text-slate-50 ring-1 ring-emerald-400/15"
         }`}
       >
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
           <span className="font-medium text-slate-200">{isUser ? "You" : "Codex"}</span>
           {!isUser && running && <RunningBadge label="Streaming" />}
           {mode === "inspect" && <MetaBadge>{item.type}</MetaBadge>}
           {mode === "inspect" && <MetaBadge>{item.finalStatus}</MetaBadge>}
         </div>
 
-        <pre className={`whitespace-pre-wrap break-words font-sans text-[15px] leading-7 ${isUser ? "text-slate-50" : "text-slate-100"}`}>
+        <pre className={`whitespace-pre-wrap break-words font-sans text-[15px] leading-6 ${isUser ? "text-slate-50" : "text-slate-100"}`}>
           {extractItemBody(item)}
           {running && <StreamingCursor />}
         </pre>
 
-        <div className={`mt-3 flex justify-end transition ${mode === "focus" ? "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}>
+        <div
+          className={`absolute bottom-2 right-2 transition ${
+            mode === "inspect"
+              ? "opacity-100"
+              : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          }`}
+        >
           <InspectButton onClick={() => onInspectItem(item.id)} />
         </div>
       </div>
@@ -221,7 +236,7 @@ const CommandEntry = ({
   mode: WorkbenchViewMode;
   onInspectItem: (itemId: string) => void;
 }) => {
-  const [open, setOpen] = useState(mode === "inspect");
+  const [open, setOpen] = useState(false);
   const running = isStreamingItem(item);
 
   return (
@@ -237,6 +252,7 @@ const CommandEntry = ({
             <span>{itemSummary(item)}</span>
             {running && <RunningBadge label="Live output" />}
           </div>
+          {!open && <p className="mt-2 text-sm leading-6 text-slate-300">{commandPreview(item)}</p>}
         </div>
         <div className="flex items-center gap-2">
           <InspectButton onClick={() => onInspectItem(item.id)} />
@@ -306,8 +322,9 @@ const GenericItemEntry = ({
   onInspectItem: (itemId: string) => void;
 }) => {
   const running = isStreamingItem(item);
-  const focusCollapsed = mode === "focus";
-  const [open, setOpen] = useState(!focusCollapsed);
+  const isReasoningItem = isReasoningLikeItem(item);
+  const collapsedByDefault = isReasoningItem || mode === "focus";
+  const [open, setOpen] = useState(!collapsedByDefault);
   const subduedTone = typeTone[item.type] ?? "bg-white/[0.03] ring-1 ring-white/6";
 
   return (
@@ -318,12 +335,12 @@ const GenericItemEntry = ({
     >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-medium text-slate-100">{isReasoningLikeItem(item) ? "Reasoning" : item.type}</div>
+          <div className="text-sm font-medium text-slate-100">{isReasoningItem ? "Reasoning" : item.type}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span>{item.finalStatus}</span>
             {running && <RunningBadge label="Running" />}
           </div>
-          {focusCollapsed && <p className="mt-2 text-sm leading-6 text-slate-300">{bodyPreview(item, isReasoningLikeItem(item) ? 180 : 130)}</p>}
+          {!open && <p className="mt-2 text-sm leading-6 text-slate-300">{bodyPreview(item, isReasoningItem ? 180 : 130)}</p>}
         </div>
         <div className="flex items-center gap-2">
           <InspectButton onClick={() => onInspectItem(item.id)} />
@@ -331,7 +348,7 @@ const GenericItemEntry = ({
         </div>
       </summary>
 
-      {(!focusCollapsed || open) && (
+      {open && (
         <div className="mt-3">
           <pre className="mono-panel scrollbar max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-[18px] p-3 font-mono text-xs text-slate-100">
             {extractItemBody(item)}
@@ -760,6 +777,9 @@ export const TimelinePane = ({
               <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={inspectorOpen ? onCloseInspector : onOpenInspector}>
                 {inspectorOpen ? "Hide Inspector" : "Open Inspector"}
               </button>
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => void exportThreadEvents(thread.id)}>
+                Export
+              </button>
               <button
                 className="ghost-btn rounded-full px-3 py-1.5 text-xs"
                 onClick={() =>
@@ -786,6 +806,16 @@ export const TimelinePane = ({
                 }
               >
                 Fork
+              </button>
+              <button
+                className="ghost-btn rounded-full px-3 py-1.5 text-xs"
+                onClick={() =>
+                  void callAction("thread.archive", {
+                    threadId: thread.id,
+                  })
+                }
+              >
+                Archive
               </button>
             </div>
 
