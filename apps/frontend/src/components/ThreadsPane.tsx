@@ -25,9 +25,9 @@ const threadTitle = (thread: { metadata: Record<string, unknown>; summary: { pre
 
 const threadPreview = (thread: { summary: { preview: string } | null }): string => {
   if (!thread.summary?.preview) {
-    return "No preview";
+    return "No preview yet";
   }
-  return compactText(thread.summary.preview, 180);
+  return compactText(thread.summary.preview, 120);
 };
 
 const statusLabel = (status: unknown): string => {
@@ -41,6 +41,21 @@ const statusLabel = (status: unknown): string => {
     return String((status as Record<string, unknown>).type);
   }
   return JSON.stringify(status);
+};
+
+const matchesSearch = (
+  thread: {
+    metadata: Record<string, unknown>;
+    summary: { preview: string } | null;
+    id: string;
+  },
+  searchTerm: string,
+): boolean => {
+  if (!searchTerm) {
+    return true;
+  }
+  const haystack = [threadTitle(thread), thread.summary?.preview ?? "", thread.id].join(" ").toLowerCase();
+  return haystack.includes(searchTerm.toLowerCase());
 };
 
 export const ThreadsPane = () => {
@@ -75,7 +90,7 @@ export const ThreadsPane = () => {
           if (!showArchived && thread.archived) {
             return false;
           }
-          if (searchTerm && !JSON.stringify(thread.summary).toLowerCase().includes(searchTerm.toLowerCase())) {
+          if (!matchesSearch(thread, searchTerm)) {
             return false;
           }
           if (selectedCwd && thread.cwd !== selectedCwd) {
@@ -137,14 +152,15 @@ export const ThreadsPane = () => {
   };
 
   return (
-    <aside className="panel min-w-0 rounded-3xl p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-      <div className="mb-4 flex items-center justify-between">
+    <aside className="panel min-w-0 rounded-[30px] p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-50">Workspaces</h2>
-          <p className="text-xs text-slate-500">按工作目录组织对话线程</p>
+          <div className="text-[11px] tracking-[0.18em] text-slate-500">Threads</div>
+          <h2 className="mt-1 text-lg font-semibold text-slate-50">Conversation list</h2>
+          <p className="mt-1 text-xs text-slate-500">Compact threads grouped by workspace</p>
         </div>
         <button
-          className="primary-btn rounded-full px-3 py-1 text-xs font-medium"
+          className="primary-btn rounded-full px-3 py-1.5 text-xs font-medium"
           onClick={() =>
             void runThreadAction<{ thread: { id: string } }>(
               "thread.start",
@@ -163,187 +179,206 @@ export const ThreadsPane = () => {
             )
           }
         >
-          New Thread
+          New
         </button>
       </div>
 
-      <div className="space-y-2">
-        <select
-          value={selectedCwd}
-          onChange={(event) => setSelectedCwd(event.target.value)}
-          className="surface-card w-full rounded-2xl px-3 py-2 text-sm"
-        >
-          <option value="">All workspaces</option>
-          {cwdOptions.map((cwd) => (
-            <option key={cwd} value={cwd}>
-              {cwd}
-            </option>
-          ))}
-        </select>
+      <div className="mt-4 space-y-2">
         <input
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Search title / preview"
-          className="surface-card w-full rounded-2xl px-3 py-2 text-sm"
+          placeholder="Search threads"
+          className="surface-soft w-full rounded-[18px] px-3 py-2 text-sm"
         />
-        <div className="flex gap-2">
-          <button
-            className="ghost-btn flex-1 rounded-2xl px-3 py-2 text-xs"
-            onClick={() => void fetchThreads()}
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <select
+            value={selectedCwd}
+            onChange={(event) => setSelectedCwd(event.target.value)}
+            className="surface-soft w-full rounded-[18px] px-3 py-2 text-sm"
           >
-            Apply
+            <option value="">All workspaces</option>
+            {cwdOptions.map((cwd) => (
+              <option key={cwd} value={cwd}>
+                {cwd}
+              </option>
+            ))}
+          </select>
+          <button className="ghost-btn rounded-[18px] px-3 py-2 text-xs" onClick={() => void fetchThreads()}>
+            Refresh
           </button>
           <button
-            className={`flex-1 rounded-2xl px-3 py-2 text-xs ${showArchived ? "border border-rose-400/50 bg-rose-500/10 text-rose-200" : "ghost-btn"}`}
+            className={`rounded-[18px] px-3 py-2 text-xs ${showArchived ? "bg-rose-500/12 text-rose-200 ring-1 ring-rose-400/20" : "ghost-btn"}`}
             onClick={() => setShowArchived((value) => !value)}
           >
             Archived
           </button>
         </div>
         {actionMessage && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
+          <div className="rounded-[18px] bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
             {actionMessage}
           </div>
         )}
       </div>
 
-      <div className="scrollbar mt-4 space-y-3 pr-1 lg:flex-1 lg:overflow-y-auto">
+      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+        <span>{threads.length} visible</span>
+        <span>{showArchived ? "Archive view" : "Active view"}</span>
+      </div>
+
+      <div className="scrollbar mt-3 space-y-4 pr-1 lg:flex-1 lg:overflow-y-auto">
         {groupedThreads.map(([cwdLabel, items]) => (
-          <section key={cwdLabel} className="space-y-3">
+          <section key={cwdLabel} className="space-y-2">
             {!selectedCwd && (
-              <div className="sticky top-0 z-10 rounded-2xl border border-slate-800/80 bg-[rgba(23,25,29,0.96)] px-3 py-2 backdrop-blur">
-                <div className="surface-soft rounded-xl px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Workspace</div>
-                  <div className="truncate text-sm text-slate-200">{cwdLabel}</div>
+              <div className="sticky top-0 z-10 bg-[rgba(23,25,29,0.92)] py-1 backdrop-blur">
+                <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
+                  <span className="truncate">{cwdLabel}</span>
+                  <span>{items.length}</span>
                 </div>
               </div>
             )}
-            {items.map((thread) => (
-              <div
-                key={thread.id}
-                className={`rounded-3xl border p-3 transition ${snapshot.selectedThreadId === thread.id ? "border-rose-400/50 bg-rose-500/10 shadow-[0_0_0_1px_rgba(251,113,133,0.08)]" : "surface-card"}`}
-              >
-                <button
-                  className="w-full text-left"
-                  onClick={() => {
-                    selectThread(thread.id);
-                    navigateToRoute({ name: "thread", threadId: thread.id });
-                  }}
+
+            {items.map((thread) => {
+              const selected = snapshot.selectedThreadId === thread.id;
+              const metaBits = [thread.historyState, statusLabel(thread.summary?.status), thread.metadata.agentRole, thread.metadata.agentNickname]
+                .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+                .slice(0, 3);
+
+              return (
+                <div
+                  key={thread.id}
+                  className={`group relative rounded-[24px] transition ${
+                    selected ? "bg-rose-500/[0.11] shadow-[0_0_0_1px_rgba(251,113,133,0.15)]" : "bg-white/[0.025] hover:bg-white/[0.045]"
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">{thread.historyState} thread</div>
-                      <strong className="block min-w-0 break-words text-sm text-slate-100">{threadTitle(thread)}</strong>
+                  <button
+                    className="block w-full rounded-[24px] px-3 py-3 pr-20 text-left"
+                    title={thread.id}
+                    onClick={() => {
+                      selectThread(thread.id);
+                      navigateToRoute({ name: "thread", threadId: thread.id });
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-slate-100">{threadTitle(thread)}</div>
+                        <p className="mt-1 truncate text-xs text-slate-400">{threadPreview(thread)}</p>
+                        <div className="mt-2 truncate text-[11px] text-slate-500">{metaBits.join(" • ") || (thread.cwd ?? "No workspace")}</div>
+                      </div>
+                      <div className="status-chip shrink-0">
+                        <span className="text-slate-200">{statusLabel(thread.summary?.status)}</span>
+                      </div>
                     </div>
-                    <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
-                      {statusLabel(thread.summary?.status)}
-                    </span>
+                  </button>
+
+                  <div
+                    className={`absolute right-2 top-2 flex flex-wrap gap-1 rounded-full bg-[rgba(12,14,18,0.86)] p-1 shadow-lg transition ${
+                      selected ? "opacity-100" : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+                    }`}
+                  >
+                    <button
+                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void runThreadAction(
+                          "thread.read",
+                          {
+                            threadId: thread.id,
+                            includeTurns: true,
+                          },
+                          () => {
+                            selectThread(thread.id);
+                            navigateToRoute({ name: "thread", threadId: thread.id });
+                          },
+                          "Loaded thread history.",
+                        );
+                      }}
+                    >
+                      Read
+                    </button>
+                    <button
+                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void runThreadAction<{ thread: { id: string } }>(
+                          "thread.resume",
+                          {
+                            threadId: thread.id,
+                            persistExtendedHistory: true,
+                          },
+                          (response) => {
+                            selectThread(response.thread.id);
+                            navigateToRoute({ name: "thread", threadId: response.thread.id });
+                          },
+                          "Thread resumed and ready for new turns.",
+                        );
+                      }}
+                    >
+                      Resume
+                    </button>
+                    <button
+                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void runThreadAction<{ thread?: { id?: string } }>(
+                          "thread.fork",
+                          {
+                            threadId: thread.id,
+                            persistExtendedHistory: true,
+                          },
+                          (response) => {
+                            const nextThreadId = String(response.thread?.id ?? "");
+                            if (nextThreadId) {
+                              selectThread(nextThreadId);
+                              navigateToRoute({ name: "thread", threadId: nextThreadId });
+                            }
+                          },
+                          "Forked thread into a new working copy.",
+                        );
+                      }}
+                    >
+                      Fork
+                    </button>
+                    <button
+                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void runThreadAction(
+                          "thread.archive",
+                          {
+                            threadId: thread.id,
+                          },
+                          undefined,
+                          "Archived thread.",
+                        );
+                      }}
+                    >
+                      Archive
+                    </button>
+                    <button
+                      className="ghost-btn rounded-full px-2 py-1 text-[11px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void exportThreadEvents(thread.id);
+                      }}
+                    >
+                      Export
+                    </button>
                   </div>
-                  <p className="mt-2 break-words text-xs text-slate-400 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
-                    {threadPreview(thread)}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                    <span>{thread.cwd || "no cwd"}</span>
-                    {thread.metadata.agentNickname != null && <span>{String(thread.metadata.agentNickname)}</span>}
-                    {thread.metadata.agentRole != null && <span>{String(thread.metadata.agentRole)}</span>}
-                  </div>
-                </button>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                    onClick={() =>
-                      void runThreadAction(
-                        "thread.read",
-                        {
-                          threadId: thread.id,
-                          includeTurns: true,
-                        },
-                        () => {
-                          selectThread(thread.id);
-                          navigateToRoute({ name: "thread", threadId: thread.id });
-                        },
-                        "Loaded thread history.",
-                      )
-                    }
-                  >
-                    Read
-                  </button>
-                  <button
-                    className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                    onClick={() =>
-                      void runThreadAction<{ thread: { id: string } }>(
-                        "thread.resume",
-                        {
-                          threadId: thread.id,
-                          persistExtendedHistory: true,
-                        },
-                        (response) => {
-                          selectThread(response.thread.id);
-                          navigateToRoute({ name: "thread", threadId: response.thread.id });
-                        },
-                        "Thread resumed and ready for new turns.",
-                      )
-                    }
-                  >
-                    Resume
-                  </button>
-                  <button
-                    className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                    onClick={() =>
-                      void runThreadAction<{ thread?: { id?: string } }>(
-                        "thread.fork",
-                        {
-                          threadId: thread.id,
-                          persistExtendedHistory: true,
-                        },
-                        (response) => {
-                          const nextThreadId = String(response.thread?.id ?? "");
-                          if (nextThreadId) {
-                            selectThread(nextThreadId);
-                            navigateToRoute({ name: "thread", threadId: nextThreadId });
-                          }
-                        },
-                        "Forked thread into a new working copy.",
-                      )
-                    }
-                  >
-                    Fork
-                  </button>
-                  <button
-                    className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                    onClick={() =>
-                      void runThreadAction(
-                        "thread.archive",
-                        {
-                          threadId: thread.id,
-                        },
-                        undefined,
-                        "Archived thread.",
-                      )
-                    }
-                  >
-                    Archive
-                  </button>
-                  <button
-                    className="ghost-btn rounded-full px-2 py-1 text-[11px]"
-                    onClick={() => void exportThreadEvents(thread.id)}
-                  >
-                    Export
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </section>
         ))}
-        {threads.length === 0 && <div className="note-panel rounded-3xl p-4 text-sm">No threads loaded.</div>}
+
+        {threads.length === 0 && <div className="note-panel rounded-[24px] p-4 text-sm">No threads loaded.</div>}
       </div>
 
       <button
         disabled={!cursor || loading}
-        className="ghost-btn mt-4 rounded-2xl px-3 py-2 text-xs disabled:opacity-50"
+        className="ghost-btn mt-4 rounded-[18px] px-3 py-2 text-xs disabled:opacity-50"
         onClick={() => void fetchThreads(cursor)}
       >
-        {loading ? "Loading..." : cursor ? "Load more" : "No more"}
+        {loading ? "Loading..." : cursor ? "Load more" : "No more threads"}
       </button>
     </aside>
   );

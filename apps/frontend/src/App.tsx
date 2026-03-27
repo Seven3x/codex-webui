@@ -7,9 +7,13 @@ import { WorkspaceOverviewPane } from "./components/WorkspaceOverviewPane";
 import { navigateToRoute, parseAppRoute } from "./lib/routes";
 import { useRuntimeStore } from "./store/useRuntimeStore";
 
+type WorkbenchViewMode = "focus" | "inspect";
+
 const App = () => {
   const { connect, socketState, snapshot, selectThread } = useRuntimeStore();
   const [route, setRoute] = useState(() => parseAppRoute(window.location.pathname));
+  const [viewMode, setViewMode] = useState<WorkbenchViewMode>("focus");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   useEffect(() => {
     connect();
@@ -31,6 +35,12 @@ const App = () => {
     selectThread(null);
   }, [route, selectThread]);
 
+  useEffect(() => {
+    if (route.name !== "thread") {
+      setInspectorOpen(false);
+    }
+  }, [route.name]);
+
   const pageTitle = useMemo(() => {
     if (route.name === "settings") {
       return "Settings";
@@ -41,40 +51,113 @@ const App = () => {
     return "Workspace Overview";
   }, [route]);
 
+  const headerBadges = useMemo(
+    () => [
+      { label: "WS", value: socketState },
+      { label: "Runtime", value: snapshot.runtime.connectionState },
+      { label: "RPC", value: String(snapshot.runtime.pendingRequests.length) },
+      { label: "Approvals", value: String(snapshot.runtime.pendingServerRequests.length) },
+    ],
+    [snapshot.runtime.connectionState, snapshot.runtime.pendingRequests.length, snapshot.runtime.pendingServerRequests.length, socketState],
+  );
+
+  const showThreadWorkbench = route.name === "thread";
+  const workbenchLayoutClass = showThreadWorkbench
+    ? inspectorOpen
+      ? "lg:grid-cols-[260px_minmax(0,1fr)_340px] xl:grid-cols-[272px_minmax(0,1fr)_380px]"
+      : "lg:grid-cols-[260px_minmax(0,1fr)_52px] xl:grid-cols-[272px_minmax(0,1fr)_52px]"
+    : "lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]";
+
+  const switchWorkbenchMode = (nextMode: WorkbenchViewMode) => {
+    setViewMode(nextMode);
+    setInspectorOpen(nextMode === "inspect");
+  };
+
+  const openInspector = () => {
+    setViewMode("inspect");
+    setInspectorOpen(true);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col gap-4 p-4 lg:h-screen lg:overflow-hidden">
-      <header className="panel rounded-3xl px-5 py-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.35em] text-slate-500">Codex protocol-faithful client</div>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-50">{pageTitle}</h1>
+    <main className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:overflow-hidden lg:p-4">
+      <header className="panel rounded-[30px] px-5 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium tracking-[0.22em] text-slate-500">Codex protocol-faithful client</div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h1 className="text-[28px] font-semibold tracking-tight text-slate-50">{pageTitle}</h1>
+              {showThreadWorkbench && (
+                <div className="inline-flex rounded-full bg-white/[0.04] p-1 text-sm">
+                  {(["focus", "inspect"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`rounded-full px-3 py-1.5 transition ${
+                        viewMode === mode ? "bg-[#ff7b72] text-[#160d0d]" : "text-slate-300 hover:text-white"
+                      }`}
+                      onClick={() => switchWorkbenchMode(mode)}
+                    >
+                      {mode === "focus" ? "Focus" : "Inspect"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-            <button className={`rounded-full px-3 py-1 text-xs ${route.name === "workspace" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "workspace" })}>
-              Workspace
-            </button>
-            {snapshot.selectedThreadId && (
-              <button className={`rounded-full px-3 py-1 text-xs ${route.name === "thread" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "thread", threadId: snapshot.selectedThreadId! })}>
-                Thread
+
+          <div className="flex flex-col gap-2 lg:items-end">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <button className={`rounded-full px-3 py-1.5 text-xs ${route.name === "workspace" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "workspace" })}>
+                Workspace
               </button>
-            )}
-            <button className={`rounded-full px-3 py-1 text-xs ${route.name === "settings" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "settings" })}>
-              Settings
-            </button>
-            <span>WS: {socketState}</span>
-            <span>Connection: {snapshot.runtime.connectionState}</span>
-            <span>Pending RPC: {snapshot.runtime.pendingRequests.length}</span>
-            <span>Pending approvals: {snapshot.runtime.pendingServerRequests.length}</span>
+              {snapshot.selectedThreadId && (
+                <button className={`rounded-full px-3 py-1.5 text-xs ${route.name === "thread" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "thread", threadId: snapshot.selectedThreadId! })}>
+                  Thread
+                </button>
+              )}
+              <button className={`rounded-full px-3 py-1.5 text-xs ${route.name === "settings" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "settings" })}>
+                Settings
+              </button>
+              {showThreadWorkbench && (
+                <button className="ghost-btn rounded-full px-3 py-1.5 text-xs lg:hidden" onClick={openInspector}>
+                  Inspector
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {headerBadges.map((badge) => (
+                <div key={badge.label} className="status-chip">
+                  <span className="text-slate-500">{badge.label}</span>
+                  <span className="text-slate-200">{badge.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
-      <section className="grid flex-1 gap-4 lg:min-h-0 lg:grid-cols-[280px_minmax(0,1fr)_320px] xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+      <section className={`grid flex-1 gap-3 lg:min-h-0 ${workbenchLayoutClass}`}>
         <ThreadsPane />
         {route.name === "workspace" && <WorkspaceOverviewPane />}
-        {route.name === "thread" && <TimelinePane routeThreadId={route.threadId} />}
+        {route.name === "thread" && (
+          <TimelinePane
+            routeThreadId={route.threadId}
+            viewMode={viewMode}
+            onViewModeChange={switchWorkbenchMode}
+            inspectorOpen={inspectorOpen}
+            onOpenInspector={openInspector}
+            onCloseInspector={() => setInspectorOpen(false)}
+          />
+        )}
         {route.name === "settings" && <SettingsPane />}
-        <InspectorPane />
+        {showThreadWorkbench && (
+          <InspectorPane
+            open={inspectorOpen}
+            viewMode={viewMode}
+            onOpen={openInspector}
+            onClose={() => setInspectorOpen(false)}
+          />
+        )}
       </section>
     </main>
   );

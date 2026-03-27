@@ -6,17 +6,19 @@
   color-scheme: dark;
   --bg: #17191d;
   --bg-elevated: #1d2026;
-  --panel: rgba(29, 32, 38, 0.9);
-  --panel-strong: #242831;
-  --panel-soft: #20242c;
+  --panel: rgba(24, 27, 33, 0.9);
+  --panel-strong: rgba(255, 255, 255, 0.045);
+  --panel-soft: rgba(255, 255, 255, 0.03);
+  --panel-mono: #111318;
   --text: #f4f7fb;
   --muted: #98a1b3;
   --muted-strong: #c4cad6;
-  --border: rgba(132, 144, 167, 0.18);
+  --border: rgba(132, 144, 167, 0.12);
+  --border-soft: rgba(132, 144, 167, 0.08);
   --accent: #ff7b72;
   --accent-soft: rgba(255, 123, 114, 0.12);
   --success: #72f1b8;
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
 }
 
 html,
@@ -42,11 +44,95 @@ body {
   box-sizing: border-box;
 }
 
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+input,
+textarea,
+select {
+  color: var(--text);
+}
+
+textarea {
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
+}
+
+.surface-card {
+  background: var(--panel-strong);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
+.surface-soft {
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
+.note-panel {
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px dashed rgba(132, 144, 167, 0.18);
+  color: var(--muted);
+}
+
+.mono-panel {
+  background: var(--panel-mono);
+  border: 1px solid rgba(132, 144, 167, 0.1);
+}
+
+.ghost-btn {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(132, 144, 167, 0.12);
+  color: var(--muted-strong);
+}
+
+.ghost-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f8fafc;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.45;
+}
+
+.primary-btn {
+  background: var(--accent);
+  color: #180d0d;
+}
+
+.primary-btn:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 0.38rem 0.7rem;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(132, 144, 167, 0.1);
 }
 
 .scrollbar {
@@ -62,55 +148,4 @@ body {
 .scrollbar::-webkit-scrollbar-thumb {
   background: rgba(121, 131, 149, 0.45);
   border-radius: 999px;
-}
-
-input,
-textarea,
-select {
-  color: var(--text);
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: var(--muted);
-}
-
-.surface-card {
-  background: var(--panel-strong);
-  border: 1px solid var(--border);
-}
-
-.surface-soft {
-  background: var(--panel-soft);
-  border: 1px solid var(--border);
-}
-
-.note-panel {
-  background: rgba(36, 40, 49, 0.76);
-  border: 1px dashed rgba(132, 144, 167, 0.24);
-  color: var(--muted);
-}
-
-.mono-panel {
-  background: #111318;
-  border: 1px solid rgba(132, 144, 167, 0.14);
-}
-
-.ghost-btn {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  color: var(--muted-strong);
-}
-
-.ghost-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.primary-btn {
-  background: var(--accent);
-  color: #180d0d;
-}
-
-.primary-btn:hover {
-  filter: brightness(1.04);
 }

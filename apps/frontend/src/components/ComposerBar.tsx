@@ -308,62 +308,81 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
     });
   };
 
+  const canSend = Boolean(text.trim());
+  const activeTurnId = selectedThread?.activeTurnId ?? null;
+
   return (
-    <footer className={`${embedded ? "surface-card rounded-3xl p-4" : "panel min-w-0 rounded-3xl p-4"}`}>
-      <div className="grid gap-3">
-        <textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Build something..."
-          className="surface-card min-h-[88px] rounded-3xl px-4 py-3 text-[15px]"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <footer className={`${embedded ? "surface-card" : "panel min-w-0"} rounded-[28px] p-4`}>
+      <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="space-y-2">
+            <textarea
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void sendTurn();
+                }
+              }}
+              placeholder="Build something..."
+              className="surface-soft min-h-[74px] w-full rounded-[24px] px-4 py-3 text-[15px] leading-6"
+            />
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>{selectedThread ? (selectedThread.historyState === "resumed" ? "Ready on current thread" : "Send will resume current thread") : "Send starts a new thread"}</span>
+              {activeTurnId && <span>Active turn: {activeTurnId.slice(0, 8)}</span>}
+            </div>
+          </div>
+
+          <button
+            className="primary-btn rounded-full px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canSend}
+            onClick={() => void sendTurn()}
+          >
+            Send
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <button className="ghost-btn rounded-full px-3 py-1 text-sm" onClick={() => focusControl("model")}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("model")}>
               {selectedModelMeta?.displayName || model || "Auto model"}
             </button>
-            <button className="ghost-btn rounded-full px-3 py-1 text-sm" onClick={() => focusControl("effort")}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("effort")}>
               {effort || selectedModelMeta?.defaultReasoningEffort || "Auto effort"}
             </button>
-            <button className="ghost-btn rounded-full px-3 py-1 text-sm" onClick={() => focusControl("approval")}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("approval")}>
               {approvalOptions.find((option) => option.value === approvalPolicy)?.label || "Approval"}
             </button>
-            <button className="ghost-btn rounded-full px-3 py-1 text-sm" onClick={() => focusControl("personality")}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => focusControl("personality")}>
               {personalityOptions.find((option) => option.value === personality)?.label || "Style"}
             </button>
-            <button className="ghost-btn rounded-full px-3 py-1 text-xs" onClick={() => setShowControls((value) => !value)}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" onClick={() => setShowControls((value) => !value)}>
               {showControls ? "Less" : "More"}
             </button>
-            {snapshot.selectedThreadId && (
-              <span className="text-xs uppercase tracking-[0.22em] text-slate-500">thread {snapshot.selectedThreadId.slice(0, 8)}</span>
-            )}
-            {selectedThread && selectedThread.historyState !== "resumed" && (
-              <span className="text-xs text-slate-500">Send will resume this thread first.</span>
-            )}
           </div>
-          <div className="flex items-center gap-2">
-            <button className="primary-btn rounded-full px-4 py-2 text-sm font-semibold" onClick={() => void sendTurn()}>
-              Send
-            </button>
-            <button className="ghost-btn rounded-full px-4 py-2 text-sm" onClick={() => void steerTurn()}>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
               Steer
             </button>
-            <button className="ghost-btn rounded-full px-4 py-2 text-sm" onClick={() => void interruptTurn()}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!activeTurnId} onClick={() => void interruptTurn()}>
               Stop
             </button>
-            <button className="ghost-btn rounded-full px-4 py-2 text-sm" onClick={() => void startReview()}>
+            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
               Review
             </button>
           </div>
         </div>
+
         {showControls && (
-          <div className="grid gap-2 rounded-2xl border border-slate-800/80 bg-slate-950/40 p-3 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]">
+          <div className="grid gap-2 rounded-[22px] bg-white/[0.03] p-3 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]">
             <div className="min-w-0">
               <select
                 ref={modelRef}
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
-                className={`surface-card w-full rounded-2xl px-3 py-2 text-sm ${activeControl === "model" ? "ring-1 ring-[#ff7b72]" : ""}`}
+                className={`surface-soft w-full rounded-[18px] px-3 py-2 text-sm ${activeControl === "model" ? "ring-1 ring-[#ff7b72]" : ""}`}
                 title="Model"
               >
                 <option value="">Auto model</option>
@@ -378,7 +397,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
               ref={effortRef}
               value={effort}
               onChange={(event) => setEffort(event.target.value as ReasoningEffort | "")}
-              className={`surface-card rounded-2xl px-3 py-2 text-sm ${activeControl === "effort" ? "ring-1 ring-[#ff7b72]" : ""}`}
+              className={`surface-soft rounded-[18px] px-3 py-2 text-sm ${activeControl === "effort" ? "ring-1 ring-[#ff7b72]" : ""}`}
               title="Reasoning effort"
             >
               <option value="">Auto effort</option>
@@ -395,7 +414,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
                 value={selectedCwd}
                 onChange={(event) => setSelectedCwd(event.target.value)}
                 placeholder="Working directory"
-                className={`surface-card w-full rounded-2xl px-3 py-2 text-sm ${activeControl === "cwd" ? "ring-1 ring-[#ff7b72]" : ""}`}
+                className={`surface-soft w-full rounded-[18px] px-3 py-2 text-sm ${activeControl === "cwd" ? "ring-1 ring-[#ff7b72]" : ""}`}
                 title="Working directory"
               />
               <datalist id="cwd-options">
@@ -408,7 +427,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
               ref={approvalRef}
               value={approvalPolicy as string}
               onChange={(event) => setApprovalPolicy(event.target.value as AskForApproval | "on-request")}
-              className={`surface-card rounded-2xl px-3 py-2 text-sm ${activeControl === "approval" ? "ring-1 ring-[#ff7b72]" : ""}`}
+              className={`surface-soft rounded-[18px] px-3 py-2 text-sm ${activeControl === "approval" ? "ring-1 ring-[#ff7b72]" : ""}`}
               title="Approval policy"
             >
               {approvalOptions.map((option) => (
@@ -421,7 +440,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
               ref={personalityRef}
               value={personality}
               onChange={(event) => setPersonality(event.target.value as Personality | "pragmatic")}
-              className={`surface-card rounded-2xl px-3 py-2 text-sm ${activeControl === "personality" ? "ring-1 ring-[#ff7b72]" : ""}`}
+              className={`surface-soft rounded-[18px] px-3 py-2 text-sm ${activeControl === "personality" ? "ring-1 ring-[#ff7b72]" : ""}`}
               title="Personality"
             >
               {personalityOptions.map((option) => (
@@ -432,8 +451,9 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
             </select>
           </div>
         )}
+
         {composerError && (
-          <div className="rounded-2xl border border-rose-500/25 bg-rose-500/8 px-3 py-2 text-sm text-rose-100">
+          <div className="rounded-[18px] bg-rose-500/10 px-3 py-2 text-sm text-rose-100 ring-1 ring-rose-500/20">
             {composerError}
           </div>
         )}
