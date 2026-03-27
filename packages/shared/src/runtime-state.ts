@@ -340,11 +340,13 @@ export const createEmptySnapshot = (): RuntimeSnapshot => ({
 const upsertThread = (snapshot: RuntimeSnapshot, thread: Thread, mode: ThreadRecord["historyState"]): RuntimeSnapshot => {
   const existing = snapshot.threads[thread.id];
   const archived = existing?.archived ?? false;
+  const replaceRuntimeTurnState = mode === "loaded" || mode === "resumed";
   const record: ThreadRecord = existing
     ? {
         ...existing,
         summary: { ...existing.summary, ...thread },
         fullThread: mode === "loaded" || mode === "resumed" ? thread : existing.fullThread,
+        activeTurnId: replaceRuntimeTurnState ? null : existing.activeTurnId,
         status: statusToLabel(thread.status),
         cwd: thread.cwd,
         archived,
@@ -390,8 +392,12 @@ const upsertThread = (snapshot: RuntimeSnapshot, thread: Thread, mode: ThreadRec
       turnRecord.rawTurn = turn as unknown as Record<string, unknown>;
       turnRecord.status = turn.status;
       turnRecord.error = (turn.error ?? null) as Record<string, unknown> | null;
+      if (replaceRuntimeTurnState) {
+        turnRecord.startedAt = turnRecord.startedAt ?? 1;
+        turnRecord.completedAt = turn.status === "inProgress" ? null : (turnRecord.completedAt ?? 1);
+      }
       for (const item of turn.items) {
-        upsertItem(turnRecord, item as unknown as Record<string, unknown>, null, false);
+        upsertItem(turnRecord, item as unknown as Record<string, unknown>, null, turn.status !== "inProgress");
       }
       if (!record.turnOrder.includes(turn.id)) {
         record.turnOrder.push(turn.id);
@@ -448,6 +454,59 @@ const joinStringArray = (value: unknown): string =>
         .join("\n\n")
     : "";
 
+const renderFileChanges = (value: unknown): string => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return "";
+  }
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return JSON.stringify(entry);
+      }
+      const record = entry as Record<string, unknown>;
+      const path = String(record.path ?? "unknown");
+      const kind = String(record.kind ?? "change");
+      const diff = typeof record.diff === "string" ? record.diff.trim() : "";
+      return diff ? `${kind} ${path}\n${diff}` : `${kind} ${path}`;
+    })
+    .join("\n\n");
+};
+
+const renderWebSearchAction = (value: unknown): string => {
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  const record = value as Record<string, unknown>;
+  const actionType = String(record.type ?? "other");
+  if (actionType === "search") {
+    const queries = Array.isArray(record.queries)
+      ? record.queries.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [];
+    const fallbackQuery = typeof record.query === "string" && record.query.trim().length > 0 ? [record.query.trim()] : [];
+    const normalizedQueries = queries.length > 0 ? queries : fallbackQuery;
+    return normalizedQueries.length > 0 ? `Search:\n${normalizedQueries.map((query) => `- ${query}`).join("\n")}` : "Search";
+  }
+  if (actionType === "openPage") {
+    return `Open page: ${String(record.url ?? "unknown")}`;
+  }
+  if (actionType === "findInPage") {
+    return `Find in page: ${String(record.pattern ?? "unknown")} (${String(record.url ?? "unknown")})`;
+  }
+  return `Web action: ${actionType}`;
+};
+
+const deriveItemFinalStatus = (rawItem: Record<string, unknown>, completed: boolean): string => {
+  if (completed) {
+    return "completed";
+  }
+  const rawStatus = rawItem.status;
+  if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
+    return rawStatus;
+  }
+  return "started";
+};
+
 const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecord["aggregatedDeltas"]): string => {
   const itemType = item.type;
   if (itemType === "agentMessage") {
@@ -457,13 +516,59 @@ const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecor
     return preferFinalContent(item.aggregatedOutput, aggregated.commandOutput);
   }
   if (itemType === "fileChange") {
-    return preferFinalContent(item.output, aggregated.fileChangeOutput);
+    return preferFinalContent(renderFileChanges(item.changes), aggregated.fileChangeOutput);
   }
   if (itemType === "plan") {
     return String(item.text ?? "");
   }
   if (itemType === "reasoning") {
     return joinStringArray(item.content) || joinStringArray(item.summary);
+  }
+  if (itemType === "webSearch") {
+    return [typeof item.query === "string" ? `Query: ${item.query}` : "", renderWebSearchAction(item.action)]
+      .filter((entry) => entry.length > 0)
+      .join("\n");
+  }
+  if (itemType === "imageView") {
+    return `Viewed image: ${String(item.path ?? "unknown")}`;
+  }
+  if (itemType === "imageGeneration") {
+    return [
+      typeof item.revisedPrompt === "string" && item.revisedPrompt ? `Prompt: ${item.revisedPrompt}` : "",
+      `Result: ${String(item.result ?? "")}`,
+      item.savedPath ? `Saved: ${String(item.savedPath)}` : "",
+    ]
+      .filter((entry) => entry.length > 0)
+      .join("\n");
+  }
+  if (itemType === "enteredReviewMode" || itemType === "exitedReviewMode") {
+    return String(item.review ?? "");
+  }
+  if (itemType === "mcpToolCall") {
+    return [String(item.server ?? ""), String(item.tool ?? ""), item.error ? JSON.stringify(item.error, null, 2) : "", item.result ? JSON.stringify(item.result, null, 2) : ""]
+      .filter((entry) => entry.length > 0)
+      .join("\n\n");
+  }
+  if (itemType === "dynamicToolCall") {
+    return [String(item.tool ?? ""), item.arguments ? JSON.stringify(item.arguments, null, 2) : "", item.contentItems ? JSON.stringify(item.contentItems, null, 2) : ""]
+      .filter((entry) => entry.length > 0)
+      .join("\n\n");
+  }
+  if (itemType === "collabAgentToolCall") {
+    return [
+      `Tool: ${String(item.tool ?? "unknown")}`,
+      item.prompt ? `Prompt: ${String(item.prompt)}` : "",
+      Array.isArray(item.receiverThreadIds) && item.receiverThreadIds.length > 0 ? `Targets: ${item.receiverThreadIds.join(", ")}` : "",
+      item.agentsStates ? JSON.stringify(item.agentsStates, null, 2) : "",
+    ]
+      .filter((entry) => entry.length > 0)
+      .join("\n\n");
+  }
+  if (itemType === "hookPrompt") {
+    return JSON.stringify(item.fragments ?? [], null, 2);
+  }
+  if (itemType === "contextCompaction") {
+    return "Context compacted.";
   }
   return JSON.stringify(item, null, 2);
 };
@@ -567,16 +672,20 @@ const upsertItem = (
           fileChangeOutput: "",
         },
         renderedText: "",
-        finalStatus: completed ? "completed" : "started",
+        finalStatus: deriveItemFinalStatus(rawItem, completed),
         startedAt: timestamp,
-        completedAt: completed ? timestamp : null,
+        completedAt: completed ? (timestamp ?? 1) : null,
         isUnknownType: !KNOWN_ITEM_TYPES.has(type),
       };
   if (timestamp && !next.startedAt) {
     next.startedAt = timestamp;
   }
+  next.finalStatus = deriveItemFinalStatus(rawItem, completed);
+  if (next.finalStatus === "completed" && next.completedAt === null) {
+    next.completedAt = timestamp ?? 1;
+  }
   if (completed) {
-    next.completedAt = timestamp;
+    next.completedAt = timestamp ?? next.completedAt ?? 1;
     next.finalStatus = "completed";
   }
   next.renderedText = deriveRenderedText(rawItem, next.aggregatedDeltas);

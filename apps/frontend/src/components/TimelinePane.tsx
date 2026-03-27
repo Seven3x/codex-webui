@@ -3,7 +3,7 @@ import type { ApprovalRecord, ItemRecord, TurnRecord } from "@codex-web/shared";
 import { ComposerBar } from "./ComposerBar";
 import { MarkdownText } from "./MarkdownText";
 import type { ResolvedDebugPreferences } from "../lib/debugPreferences";
-import { deriveWorkbenchGroups, extractItemBody, threadStats, threadTitle, type WorkbenchGroup } from "../lib/workbench";
+import { deriveWorkbenchGroups, extractItemBody, threadHasTurnSummariesWithoutItems, threadStats, threadTitle, type WorkbenchGroup } from "../lib/workbench";
 import { navigateToRoute } from "../lib/routes";
 import { exportThreadEvents } from "../lib/api";
 import { useRuntimeStore, type OptimisticTurn } from "../store/useRuntimeStore";
@@ -16,12 +16,13 @@ const typeTone: Record<string, string> = {
 };
 
 const isDialogueItem = (item: ItemRecord): boolean => item.type === "userMessage" || item.type === "agentMessage";
-const isStreamingItem = (item: ItemRecord): boolean => item.completedAt === null || item.finalStatus !== "completed";
+const isStreamingItem = (item: ItemRecord): boolean =>
+  !["completed", "failed", "declined", "interrupted", "cancelled"].includes(item.finalStatus);
 const isAssistantWorkItem = (item: ItemRecord): boolean =>
   item.type === "agentMessage" || item.type === "commandExecution" || item.type === "fileChange";
 
 const isTurnRunning = (turn: TurnRecord): boolean =>
-  turn.completedAt === null && ["pending", "inProgress", "running", "started"].includes(turn.status);
+  ["pending", "inProgress", "running", "started"].includes(turn.status);
 
 const turnHasUserMessage = (turn: TurnRecord): boolean =>
   turn.itemOrder.some((itemId) => turn.items[itemId]?.type === "userMessage");
@@ -439,7 +440,7 @@ const FileChangeEntry = ({
       {open && (
         <div className="mt-3 space-y-3 border-t border-blue-400/10 pt-3">
           <pre className="mono-panel scrollbar max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
-            {item.aggregatedDeltas.fileChangeOutput || JSON.stringify(item.rawItem, null, 2)}
+            {extractItemBody(item) || JSON.stringify(item.rawItem, null, 2)}
             {isStreamingItem(item) && <StreamingCursor />}
           </pre>
           {debug.showRawEventControls && (
@@ -829,6 +830,7 @@ export const TimelinePane = ({
   const [followOutput, setFollowOutput] = useState(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stats = threadStats(thread);
+  const hasTurnSummariesWithoutItems = threadHasTurnSummariesWithoutItems(thread);
 
   const optimisticThreadTurns = useMemo(() => {
     if (!thread) {
@@ -1043,6 +1045,12 @@ export const TimelinePane = ({
         <div className={`mx-auto flex max-w-[920px] flex-col ${isMobile ? "gap-4 pb-3" : "gap-6 pb-2"}`}>
           {thread.turnOrder.length === 0 && standaloneOptimisticTurns.length === 0 && (
             <div className="note-panel rounded-[18px] p-5 text-sm">History not loaded. Use `thread/read` or `thread/resume`.</div>
+          )}
+
+          {hasTurnSummariesWithoutItems && (
+            <div className="note-panel rounded-[18px] p-4 text-sm">
+              This thread loaded turn summaries, but the current `thread/read` projection did not include historical items. Use `Resume` or `Fork` to materialize a full editable copy with commands, edits, and tool activity when the CLI supports it.
+            </div>
           )}
 
           {thread.turnOrder.map((turnId, index) => {

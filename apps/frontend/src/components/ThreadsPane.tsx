@@ -153,18 +153,34 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
     }
   };
 
-  const openThread = (threadId: string) => {
+  const openThread = async (threadId: string) => {
     selectThread(threadId);
     navigateToRoute({ name: "thread", threadId });
-    void runThreadAction(
-      "thread.read",
-      {
+    try {
+      const response = await callAction<{ thread: { turns: Array<{ items: Array<unknown> }> } }>("thread.read", {
         threadId,
         includeTurns: true,
-      },
-      undefined,
-      "Loaded thread history.",
-    );
+      });
+      const turnCount = response.thread.turns.length;
+      const itemCount = response.thread.turns.reduce((count, turn) => count + turn.items.length, 0);
+
+      if (turnCount > 0 && itemCount === 0) {
+        setActionMessage("Loaded turn summaries. Resuming a writable copy to recover full item history...");
+        const resumed = await callAction<{ thread: { id: string } }>("thread.resume", {
+          threadId,
+          persistExtendedHistory: true,
+        });
+        const resumedThreadId = resumed.thread.id;
+        selectThread(resumedThreadId);
+        navigateToRoute({ name: "thread", threadId: resumedThreadId });
+        setActionMessage("Loaded a resumed copy with full item history.");
+        return;
+      }
+
+      setActionMessage("Loaded thread history.");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const resumeThread = async (threadId: string) => {
@@ -313,7 +329,7 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
                     <button
                       className={`block min-w-0 flex-1 rounded-[18px] text-left ${isMobile ? "px-3.5 py-3.5" : "px-3 py-2.5"}`}
                       title={thread.id}
-                      onClick={() => openThread(thread.id)}
+                      onClick={() => void openThread(thread.id)}
                     >
                       <div className="min-w-0">
                         <div className={`truncate font-medium text-slate-100 ${isMobile ? "text-[14px]" : "text-[13px]"}`}>{threadTitle(thread)}</div>
@@ -330,7 +346,7 @@ export const ThreadsPane = ({ isMobile = false }: { isMobile?: boolean }) => {
                         ...
                       </summary>
                       <div className="absolute right-0 top-8 z-20 flex min-w-[138px] flex-col gap-1 rounded-[16px] bg-[#171b21] p-2 shadow-[0_18px_48px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
-                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => openThread(thread.id)}>
+                        <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void openThread(thread.id)}>
                           Read
                         </button>
                         <button className={`ghost-btn rounded-[12px] text-left ${isMobile ? "px-3 py-2 text-sm" : "px-3 py-1.5 text-xs"}`} onClick={() => void resumeThread(thread.id)}>

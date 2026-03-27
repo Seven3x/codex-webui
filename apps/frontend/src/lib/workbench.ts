@@ -65,6 +65,34 @@ export const extractItemBody = (item: ItemRecord): string => {
       return summary;
     }
   }
+  if (item.type === "fileChange" && Array.isArray(item.rawItem?.changes)) {
+    return item.rawItem.changes
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return JSON.stringify(entry);
+        }
+        const record = entry as Record<string, unknown>;
+        const path = String(record.path ?? "unknown");
+        const kind = String(record.kind ?? "change");
+        const diff = typeof record.diff === "string" ? record.diff.trim() : "";
+        return diff ? `${kind} ${path}\n${diff}` : `${kind} ${path}`;
+      })
+      .join("\n\n");
+  }
+  if (item.type === "webSearch") {
+    const action = item.rawItem?.action;
+    const actionText =
+      action && typeof action === "object"
+        ? JSON.stringify(action, null, 2)
+        : "";
+    return [item.rawItem?.query ? `Query: ${String(item.rawItem.query)}` : "", actionText].filter(Boolean).join("\n\n");
+  }
+  if (item.type === "imageView") {
+    return `Viewed image: ${String(item.rawItem?.path ?? "unknown")}`;
+  }
+  if (item.type === "mcpToolCall" || item.type === "dynamicToolCall" || item.type === "collabAgentToolCall") {
+    return item.renderedText || JSON.stringify(item.rawItem, null, 2);
+  }
   return item.renderedText || JSON.stringify(item.rawItem, null, 2);
 };
 
@@ -194,4 +222,11 @@ export const threadStats = (thread: ThreadRecord | null) => {
     approvals,
     unknownItems,
   };
+};
+
+export const threadHasTurnSummariesWithoutItems = (thread: ThreadRecord | null): boolean => {
+  if (!thread || thread.historyState !== "loaded" || thread.turnOrder.length === 0) {
+    return false;
+  }
+  return thread.turnOrder.every((turnId) => (thread.turns[turnId]?.itemOrder.length ?? 0) === 0);
 };
