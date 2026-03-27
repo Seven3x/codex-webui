@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ConfigReadResponse, ModelListResponse } from "@codex-web/shared";
+import { resolveDebugPreferences } from "../lib/debugPreferences";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
 const formatTimestamp = (value: number | null | undefined): string => {
@@ -113,10 +114,40 @@ const CollapsiblePanel = ({
   </details>
 );
 
+const ToggleRow = ({
+  label,
+  description,
+  checked,
+  disabled = false,
+  onToggle,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) => (
+  <div className={`flex items-start justify-between gap-4 rounded-2xl border px-3 py-3 ${disabled ? "border-slate-800/60 bg-slate-950/20" : "border-slate-800/80 bg-slate-950/35"}`}>
+    <div className="min-w-0">
+      <div className="text-sm font-medium text-slate-100">{label}</div>
+      <div className="mt-1 text-xs text-slate-500">{description}</div>
+    </div>
+    <button
+      type="button"
+      disabled={disabled}
+      className={`rounded-full px-3 py-1.5 text-xs ${checked ? "primary-btn" : "ghost-btn"} ${disabled ? "opacity-50" : ""}`}
+      onClick={onToggle}
+    >
+      {checked ? "On" : "Off"}
+    </button>
+  </div>
+);
+
 export const SettingsPane = () => {
-  const { snapshot, socketState, selectedCwd, callAction, hydrate } = useRuntimeStore();
+  const { snapshot, socketState, selectedCwd, callAction, hydrate, debugPreferences, setDebugPreferences } = useRuntimeStore();
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [toolBusy, setToolBusy] = useState<string | null>(null);
+  const resolvedDebug = useMemo(() => resolveDebugPreferences(debugPreferences), [debugPreferences]);
 
   const threads = useMemo(() => snapshot.threadOrder.map((threadId) => snapshot.threads[threadId]).filter(Boolean), [snapshot.threadOrder, snapshot.threads]);
 
@@ -266,6 +297,62 @@ export const SettingsPane = () => {
               <KeyValueList rows={runtimeSummary} />
             </div>
           </details>
+        </section>
+
+        <section className="surface-card rounded-3xl p-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-100">Conversation UI / Debug</div>
+              <div className="mt-1 text-xs text-slate-500">默认保持 conversation-first；打开 Debug Mode 后再逐项恢复 turn、inspect 和 raw 相关能力。</div>
+            </div>
+            <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${resolvedDebug.debugMode ? "border-amber-400/30 bg-amber-500/10 text-amber-100" : "border-slate-700/80 bg-slate-900/60 text-slate-300"}`}>
+              {resolvedDebug.debugMode ? "debug on" : "conversation"}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <ToggleRow
+              label="Debug Mode"
+              description="显示调试轨道入口，并允许下面这些协议细节开关生效。"
+              checked={debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ debugMode: !debugPreferences.debugMode })}
+            />
+            <ToggleRow
+              label="Show Turn Boundaries"
+              description="显示 turn 分隔线、turn 状态与 turn id。"
+              checked={debugPreferences.showTurnBoundaries}
+              disabled={!debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ showTurnBoundaries: !debugPreferences.showTurnBoundaries })}
+            />
+            <ToggleRow
+              label="Show Item Type Badges"
+              description="显示 userMessage、agentMessage、completed 这类类型和状态徽标。"
+              checked={debugPreferences.showItemTypeBadges}
+              disabled={!debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ showItemTypeBadges: !debugPreferences.showItemTypeBadges })}
+            />
+            <ToggleRow
+              label="Show Inspect Controls"
+              description="显示 item 级 Inspect 按钮和选中调试入口。"
+              checked={debugPreferences.showInspectControls}
+              disabled={!debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ showInspectControls: !debugPreferences.showInspectControls })}
+            />
+            <ToggleRow
+              label="Show Raw Event Controls"
+              description="显示 raw payload / export 相关入口，而不是只保留面向对话的摘要。"
+              checked={debugPreferences.showRawEventControls}
+              disabled={!debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ showRawEventControls: !debugPreferences.showRawEventControls })}
+            />
+            <ToggleRow
+              label="Show Reasoning Blocks"
+              description="把 reasoning 从折叠提示恢复成可直接查看的内容块。"
+              checked={debugPreferences.showReasoningBlocks}
+              disabled={!debugPreferences.debugMode}
+              onToggle={() => setDebugPreferences({ showReasoningBlocks: !debugPreferences.showReasoningBlocks })}
+            />
+          </div>
         </section>
 
         <CollapsiblePanel

@@ -13,9 +13,12 @@ import type {
 } from "@codex-web/shared";
 import { createEmptySnapshot, reduceRuntimeEvents } from "@codex-web/shared";
 import { fetchRuntime, postAction } from "../lib/api";
+import type { DebugPreferences } from "../lib/debugPreferences";
+import { defaultDebugPreferences } from "../lib/debugPreferences";
 
 type SocketState = "connecting" | "open" | "closed";
 const cwdStorageKey = "codex-web:selected-cwd";
+const debugPreferencesStorageKey = "codex-web:debug-preferences";
 const optimisticAssistantPlaceholder = "Codex is thinking...";
 
 export type ComposerProfile = {
@@ -45,11 +48,39 @@ const readStoredCwd = (): string => {
   return window.localStorage.getItem(cwdStorageKey) ?? "";
 };
 
+const readStoredDebugPreferences = (): DebugPreferences => {
+  if (typeof window === "undefined") {
+    return defaultDebugPreferences;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(debugPreferencesStorageKey);
+    if (!raw) {
+      return defaultDebugPreferences;
+    }
+    const parsed = JSON.parse(raw) as Partial<DebugPreferences>;
+    return {
+      ...defaultDebugPreferences,
+      ...parsed,
+    };
+  } catch {
+    return defaultDebugPreferences;
+  }
+};
+
+const persistDebugPreferences = (preferences: DebugPreferences): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(debugPreferencesStorageKey, JSON.stringify(preferences));
+};
+
 type RuntimeStore = {
   snapshot: RuntimeSnapshot;
   socketState: SocketState;
   selectedItemId: string | null;
   selectedCwd: string;
+  debugPreferences: DebugPreferences;
   availableModels: Model[];
   composerDefaults: ComposerProfile;
   threadProfiles: Record<string, ComposerProfile>;
@@ -67,6 +98,7 @@ type RuntimeStore = {
   selectThread: (threadId: string | null) => void;
   selectItem: (itemId: string | null) => void;
   setSelectedCwd: (cwd: string) => void;
+  setDebugPreferences: (patch: Partial<DebugPreferences>) => void;
   setAvailableModels: (models: Model[]) => void;
   setComposerDefaults: (profile: Partial<ComposerProfile>) => void;
   setThreadProfile: (threadId: string, profile: Partial<ComposerProfile>) => void;
@@ -253,6 +285,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   socketState: "closed",
   selectedItemId: null,
   selectedCwd: readStoredCwd(),
+  debugPreferences: readStoredDebugPreferences(),
   availableModels: [],
   composerDefaults: {
     model: "",
@@ -443,6 +476,15 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       }
     }
   },
+  setDebugPreferences: (patch) =>
+    set((state) => {
+      const debugPreferences = {
+        ...state.debugPreferences,
+        ...patch,
+      };
+      persistDebugPreferences(debugPreferences);
+      return { debugPreferences };
+    }),
   setAvailableModels: (models) => set({ availableModels: models }),
   setComposerDefaults: (profile) =>
     set((state) => ({

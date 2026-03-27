@@ -4,16 +4,15 @@ import { SettingsPane } from "./components/SettingsPane";
 import { ThreadsPane } from "./components/ThreadsPane";
 import { TimelinePane } from "./components/TimelinePane";
 import { WorkspaceOverviewPane } from "./components/WorkspaceOverviewPane";
+import { resolveDebugPreferences } from "./lib/debugPreferences";
 import { navigateToRoute, parseAppRoute } from "./lib/routes";
 import { useRuntimeStore } from "./store/useRuntimeStore";
 
-type WorkbenchViewMode = "focus" | "inspect";
-
 const App = () => {
-  const { connect, socketState, snapshot, selectThread } = useRuntimeStore();
+  const { connect, socketState, snapshot, selectThread, debugPreferences } = useRuntimeStore();
   const [route, setRoute] = useState(() => parseAppRoute(window.location.pathname));
-  const [viewMode, setViewMode] = useState<WorkbenchViewMode>("focus");
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const debug = useMemo(() => resolveDebugPreferences(debugPreferences), [debugPreferences]);
 
   useEffect(() => {
     connect();
@@ -41,6 +40,12 @@ const App = () => {
     }
   }, [route.name]);
 
+  useEffect(() => {
+    if (!debug.debugMode) {
+      setInspectorOpen(false);
+    }
+  }, [debug.debugMode]);
+
   const pageTitle = useMemo(() => {
     if (route.name === "settings") {
       return "Settings";
@@ -51,31 +56,37 @@ const App = () => {
     return "Workspace Overview";
   }, [route]);
 
-  const headerBadges = useMemo(
-    () => [
-      { label: "WS", value: socketState },
-      { label: "Runtime", value: snapshot.runtime.connectionState },
-      { label: "RPC", value: String(snapshot.runtime.pendingRequests.length) },
-      { label: "Approvals", value: String(snapshot.runtime.pendingServerRequests.length) },
-    ],
-    [snapshot.runtime.connectionState, snapshot.runtime.pendingRequests.length, snapshot.runtime.pendingServerRequests.length, socketState],
-  );
+  const headerBadges = useMemo(() => {
+    if (debug.debugMode) {
+      return [
+        { label: "WS", value: socketState },
+        { label: "Runtime", value: snapshot.runtime.connectionState },
+        { label: "RPC", value: String(snapshot.runtime.pendingRequests.length) },
+        { label: "Approvals", value: String(snapshot.runtime.pendingServerRequests.length) },
+      ];
+    }
+
+    const badges: Array<{ label: string; value: string }> = [{ label: "Status", value: snapshot.runtime.connectionState }];
+    if (snapshot.runtime.pendingServerRequests.length > 0) {
+      badges.push({ label: "Approvals", value: String(snapshot.runtime.pendingServerRequests.length) });
+    }
+    return badges;
+  }, [debug.debugMode, snapshot.runtime.connectionState, snapshot.runtime.pendingRequests.length, snapshot.runtime.pendingServerRequests.length, socketState]);
 
   const showThreadWorkbench = route.name === "thread";
+  const showInspectorRail = showThreadWorkbench && debug.debugMode;
   const workbenchLayoutClass = showThreadWorkbench
-    ? inspectorOpen
+    ? showInspectorRail && inspectorOpen
       ? "lg:grid-cols-[260px_minmax(0,1fr)_340px] xl:grid-cols-[272px_minmax(0,1fr)_380px]"
-      : "lg:grid-cols-[260px_minmax(0,1fr)_52px] xl:grid-cols-[272px_minmax(0,1fr)_52px]"
+      : showInspectorRail
+        ? "lg:grid-cols-[260px_minmax(0,1fr)_52px] xl:grid-cols-[272px_minmax(0,1fr)_52px]"
+        : "lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]"
     : "lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]";
 
-  const switchWorkbenchMode = (nextMode: WorkbenchViewMode) => {
-    setViewMode(nextMode);
-    setInspectorOpen(nextMode === "inspect");
-  };
-
   const openInspector = () => {
-    setViewMode("inspect");
-    setInspectorOpen(true);
+    if (debug.debugMode) {
+      setInspectorOpen(true);
+    }
   };
 
   return (
@@ -86,21 +97,7 @@ const App = () => {
             <div className="text-[11px] font-medium tracking-[0.22em] text-slate-500">Codex protocol-faithful client</div>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <h1 className="text-[28px] font-semibold tracking-tight text-slate-50">{pageTitle}</h1>
-              {showThreadWorkbench && (
-                <div className="inline-flex rounded-full bg-white/[0.04] p-1 text-sm">
-                  {(["focus", "inspect"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      className={`rounded-full px-3 py-1.5 transition ${
-                        viewMode === mode ? "bg-[#ff7b72] text-[#160d0d]" : "text-slate-300 hover:text-white"
-                      }`}
-                      onClick={() => switchWorkbenchMode(mode)}
-                    >
-                      {mode === "focus" ? "Focus" : "Inspect"}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {showThreadWorkbench && debug.debugMode && <div className="status-chip text-slate-200">Debug Mode</div>}
             </div>
           </div>
 
@@ -117,7 +114,7 @@ const App = () => {
               <button className={`rounded-full px-3 py-1.5 text-xs ${route.name === "settings" ? "primary-btn" : "ghost-btn"}`} onClick={() => navigateToRoute({ name: "settings" })}>
                 Settings
               </button>
-              {showThreadWorkbench && (
+              {showThreadWorkbench && debug.debugMode && (
                 <button className="ghost-btn rounded-full px-3 py-1.5 text-xs lg:hidden" onClick={openInspector}>
                   Inspector
                 </button>
@@ -142,18 +139,17 @@ const App = () => {
         {route.name === "thread" && (
           <TimelinePane
             routeThreadId={route.threadId}
-            viewMode={viewMode}
-            onViewModeChange={switchWorkbenchMode}
+            debug={debug}
             inspectorOpen={inspectorOpen}
             onOpenInspector={openInspector}
             onCloseInspector={() => setInspectorOpen(false)}
           />
         )}
         {route.name === "settings" && <SettingsPane />}
-        {showThreadWorkbench && (
+        {showThreadWorkbench && debug.debugMode && (
           <InspectorPane
             open={inspectorOpen}
-            viewMode={viewMode}
+            enabled={debug.debugMode}
             onOpen={openInspector}
             onClose={() => setInspectorOpen(false)}
           />

@@ -7,6 +7,7 @@ import type {
   ReasoningEffort,
   TurnStartResponse,
 } from "@codex-web/shared";
+import { resolveDebugPreferences } from "../lib/debugPreferences";
 import { navigateToRoute } from "../lib/routes";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
@@ -36,6 +37,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
     selectThread,
     selectedCwd,
     setSelectedCwd,
+    debugPreferences,
     availableModels,
     setAvailableModels,
     composerDefaults,
@@ -45,6 +47,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
     updateOptimisticTurn,
     failOptimisticTurn,
   } = useRuntimeStore();
+  const debug = useMemo(() => resolveDebugPreferences(debugPreferences), [debugPreferences]);
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState<ReasoningEffort | "">("");
@@ -312,7 +315,7 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
   const activeTurnId = selectedThread?.activeTurnId ?? null;
 
   return (
-    <footer className={`${embedded ? "surface-card" : "panel min-w-0"} rounded-[28px] p-4`}>
+    <footer className={`${embedded ? "surface-soft ring-1 ring-white/6" : "panel min-w-0"} rounded-[24px] p-4`}>
       <div className="space-y-3">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <div className="space-y-2">
@@ -326,11 +329,11 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
                 }
               }}
               placeholder="Build something..."
-              className="surface-soft min-h-[74px] w-full rounded-[24px] px-4 py-3 text-[15px] leading-6"
+              className="min-h-[74px] w-full rounded-[20px] border border-white/8 bg-white/[0.025] px-4 py-3 text-[15px] leading-6"
             />
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{selectedThread ? (selectedThread.historyState === "resumed" ? "Ready on current thread" : "Send will resume current thread") : "Send starts a new thread"}</span>
-              {activeTurnId && <span>Active turn: {activeTurnId.slice(0, 8)}</span>}
+              <span>{selectedThread ? (selectedThread.historyState === "resumed" ? "Replying in this thread" : "Send will resume this thread") : "Send starts a new thread"}</span>
+              {activeTurnId && <span>{debug.debugMode ? `Active turn ${activeTurnId.slice(0, 8)}` : "Generation in progress"}</span>}
             </div>
           </div>
 
@@ -363,20 +366,24 @@ export const ComposerBar = ({ embedded = false }: { embedded?: boolean }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
-              Steer
-            </button>
+            {(showControls || debug.debugMode) && (
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!canSend || !activeTurnId} onClick={() => void steerTurn()}>
+                Steer
+              </button>
+            )}
             <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!activeTurnId} onClick={() => void interruptTurn()}>
               Stop
             </button>
-            <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
-              Review
-            </button>
+            {(showControls || debug.debugMode) && (
+              <button className="ghost-btn rounded-full px-3 py-1.5 text-xs" disabled={!snapshot.selectedThreadId} onClick={() => void startReview()}>
+                Review
+              </button>
+            )}
           </div>
         </div>
 
         {showControls && (
-          <div className="grid gap-2 rounded-[22px] bg-white/[0.03] p-3 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]">
+          <div className="grid gap-2 rounded-[20px] bg-white/[0.025] p-3 ring-1 ring-white/6 xl:grid-cols-[minmax(0,1.15fr)_120px_minmax(0,1fr)_150px_140px]">
             <div className="min-w-0">
               <select
                 ref={modelRef}

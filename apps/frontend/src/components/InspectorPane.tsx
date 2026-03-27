@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
-type WorkbenchViewMode = "focus" | "inspect";
-
 const JsonBlock = ({ value }: { value: unknown }) => (
   <pre className="mono-panel scrollbar max-h-full overflow-auto whitespace-pre-wrap break-words rounded-[20px] p-3 font-mono text-[12px] leading-6 text-slate-100">
     {JSON.stringify(value, null, 2)}
@@ -11,12 +9,12 @@ const JsonBlock = ({ value }: { value: unknown }) => (
 
 export const InspectorPane = ({
   open,
-  viewMode,
+  enabled,
   onOpen,
   onClose,
 }: {
   open: boolean;
-  viewMode: WorkbenchViewMode;
+  enabled: boolean;
   onOpen: () => void;
   onClose: () => void;
 }) => {
@@ -37,17 +35,19 @@ export const InspectorPane = ({
     return null;
   }, [selectedItemId, selectedThread]);
 
+  if (!enabled) {
+    return null;
+  }
+
   if (!open) {
     return (
       <>
         <aside className="panel hidden min-w-0 rounded-[28px] lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:items-center lg:justify-between lg:px-2 lg:py-3">
           <div className="flex flex-col items-center gap-3">
             <button className="ghost-btn rounded-full px-3 py-2 text-xs" onClick={onOpen}>
-              Inspect
+              Debug
             </button>
-            <div className="rounded-full bg-white/[0.04] px-3 py-1 text-[10px] tracking-[0.18em] text-slate-400 [writing-mode:vertical-rl]">
-              {viewMode === "inspect" ? "DEBUG" : "FOCUS"}
-            </div>
+            <div className="rounded-full bg-white/[0.04] px-3 py-1 text-[10px] tracking-[0.18em] text-slate-400 [writing-mode:vertical-rl]">DEBUG</div>
           </div>
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="rounded-full bg-white/[0.04] px-2 py-1 text-[10px] text-slate-400">
@@ -63,7 +63,7 @@ export const InspectorPane = ({
           className="ghost-btn fixed bottom-4 right-4 z-20 rounded-full px-4 py-2 text-sm lg:hidden"
           onClick={onOpen}
         >
-          Open Inspector
+          Open Debug
         </button>
       </>
     );
@@ -74,7 +74,7 @@ export const InspectorPane = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] tracking-[0.18em] text-slate-500">Protocol Inspector</div>
-          <h2 className="mt-1 text-lg font-semibold text-slate-50">Inspect / Debug</h2>
+          <h2 className="mt-1 text-lg font-semibold text-slate-50">Debug Inspector</h2>
           <p className="mt-1 text-xs text-slate-500">
             {selectedItem ? `Selected item: ${selectedItem.type}` : selectedThread ? "Inspect current thread state" : "No active thread"}
           </p>
