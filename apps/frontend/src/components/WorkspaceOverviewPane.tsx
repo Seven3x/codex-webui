@@ -1,3 +1,4 @@
+import { CodexContextPanel } from "./CodexContextPanel";
 import { useMemo } from "react";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 import { navigateToRoute } from "../lib/routes";
@@ -109,15 +110,7 @@ export const WorkspaceOverviewPane = () => {
         </div>
 
         <div className="space-y-4">
-          <div className="surface-card rounded-3xl p-4">
-            <div className="text-sm font-semibold text-slate-100">Protocol Surface</div>
-            <div className="mt-3 space-y-2 text-sm text-slate-400">
-              <div>`thread/list`, `thread/read`, `thread/resume`, `thread/fork`, `thread/archive`</div>
-              <div>`turn/start`, `turn/steer`, `turn/interrupt`, `review/start`</div>
-              <div>`item/*` streaming, approvals, raw unknown events</div>
-              <div>`command/exec` PTY terminal; `thread/shellCommand` 取决于本机生成 schema</div>
-            </div>
-          </div>
+          <CodexContextPanel />
           <div className="surface-card rounded-3xl p-4">
             <div className="text-sm font-semibold text-slate-100">Runtime Notes</div>
             <div className="mt-3 space-y-2 text-sm text-slate-400">
@@ -133,4 +126,3 @@ export const WorkspaceOverviewPane = () => {
     </section>
   );
 };
-

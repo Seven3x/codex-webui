@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AskForApproval,
+  CodexContextResponse,
+  CodexSkillRecord,
   ConfigReadResponse,
   ModelListResponse,
   Personality,
@@ -8,6 +10,7 @@ import type {
   TurnStartResponse,
 } from "@codex-web/shared";
 import { resolveDebugPreferences } from "../lib/debugPreferences";
+import { fetchCodexContext } from "../lib/api";
 import { navigateToRoute } from "../lib/routes";
 import { useRuntimeStore } from "../store/useRuntimeStore";
 
@@ -29,6 +32,87 @@ const isThreadNotFoundError = (error: unknown): boolean => {
   const normalized = message.toLowerCase();
   return normalized.includes("thread not found") || normalized.includes("no rollout found for thread id");
 };
+
+const skillMentionPattern = /\$([A-Za-z0-9._-]+)/g;
+
+const scopeWeight: Record<CodexSkillRecord["scope"], number> = {
+  workspace: 0,
+  user: 1,
+  system: 2,
+};
+
+const sortSkills = (left: CodexSkillRecord, right: CodexSkillRecord) =>
+  scopeWeight[left.scope] - scopeWeight[right.scope] ||
+  left.name.localeCompare(right.name) ||
+  left.id.localeCompare(right.id);
+
+const normalizeSkillKey = (value: string) => value.trim().toLowerCase();
+
+const skillTokensFor = (skill: CodexSkillRecord) => {
+  const tokens = new Set<string>([skill.name, skill.id]);
+  return Array.from(tokens).map((entry) => normalizeSkillKey(entry)).filter(Boolean);
+};
+
+const dedupeSkills = (skills: CodexSkillRecord[]) => {
+  const next = [...skills].sort(sortSkills);
+  const seen = new Set<string>();
+  return next.filter((skill) => {
+    const key = normalizeSkillKey(skill.name);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const resolveMentionedSkills = (text: string, skills: CodexSkillRecord[]) => {
+  const matchedKeys = new Set<string>();
+  const knownSkills = dedupeSkills(skills);
+  let match: RegExpExecArray | null = skillMentionPattern.exec(text);
+  while (match) {
+    matchedKeys.add(normalizeSkillKey(match[1] ?? ""));
+    match = skillMentionPattern.exec(text);
+  }
+  skillMentionPattern.lastIndex = 0;
+
+  return knownSkills.filter((skill) => {
+    const keys = skillTokensFor(skill);
+    return keys.some((key) => matchedKeys.has(key));
+  });
+};
+
+const getActiveSkillQuery = (text: string, cursor: number) => {
+  const beforeCursor = text.slice(0, cursor);
+  const match = beforeCursor.match(/(?:^|\s)\$([A-Za-z0-9._-]*)$/);
+  if (!match || match.index == null) {
+    return null;
+  }
+  const token = match[0].trimStart();
+  const start = beforeCursor.length - token.length;
+  return {
+    start,
+    end: cursor,
+    query: normalizeSkillKey(match[1] ?? ""),
+  };
+};
+
+const filterSkillSuggestions = (skills: CodexSkillRecord[], query: string) => {
+  const knownSkills = dedupeSkills(skills);
+  if (!query) {
+    return knownSkills.slice(0, 8);
+  }
+  return knownSkills
+    .filter((skill) => {
+      const normalizedName = normalizeSkillKey(skill.name);
+      const normalizedId = normalizeSkillKey(skill.id);
+      return normalizedName.includes(query) || normalizedId.includes(query);
+    })
+    .slice(0, 8);
+};
+
+const replaceTextRange = (value: string, start: number, end: number, replacement: string) =>
+  `${value.slice(0, start)}${replacement}${value.slice(end)}`;
 
 export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?: boolean; isMobile?: boolean }) => {
   const {
@@ -56,11 +140,16 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
   const [showControls, setShowControls] = useState(false);
   const [activeControl, setActiveControl] = useState<"model" | "effort" | "cwd" | "approval" | "personality" | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<CodexSkillRecord[]>([]);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [highlightedSkillIndex, setHighlightedSkillIndex] = useState(0);
+  const [cursorPosition, setCursorPosition] = useState(0);
   const modelRef = useRef<HTMLSelectElement | null>(null);
   const effortRef = useRef<HTMLSelectElement | null>(null);
   const cwdRef = useRef<HTMLInputElement | null>(null);
   const approvalRef = useRef<HTMLSelectElement | null>(null);
   const personalityRef = useRef<HTMLSelectElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedThreadProfile = snapshot.selectedThreadId ? threadProfiles[snapshot.selectedThreadId] : null;
   const activeProfile = selectedThreadProfile ?? composerDefaults;
@@ -98,7 +187,7 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
 
     const loadOptions = async () => {
       try {
-        const [modelsResponse, configResponse] = await Promise.all([
+        const [modelsResponse, configResponse, contextResponse] = await Promise.all([
           callAction<ModelListResponse>("model.list", {
             limit: 100,
             includeHidden: false,
@@ -107,11 +196,14 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
             includeLayers: false,
             cwd: selectedCwd || null,
           }),
+          fetchCodexContext<CodexContextResponse>(selectedCwd || null),
         ]);
         if (cancelled) {
           return;
         }
         setAvailableModels(modelsResponse.data);
+        setSkills(contextResponse.skills);
+        setSkillsError(null);
         const defaultModel = configResponse.config.model ?? modelsResponse.data.find((entry) => entry.isDefault)?.model ?? "";
         const defaultEffort = configResponse.config.model_reasoning_effort ?? "";
         const defaultApproval = configResponse.config.approval_policy ?? "on-request";
@@ -120,7 +212,10 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
           effort: defaultEffort,
           approvalPolicy: defaultApproval,
         });
-      } catch {
+      } catch (error) {
+        if (!cancelled) {
+          setSkillsError(error instanceof Error ? error.message : String(error));
+        }
         // Keep the composer usable even if metadata discovery fails.
       }
     };
@@ -140,6 +235,26 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
     }
   }, [effort, effortOptions]);
 
+  const activeSkillQuery = useMemo(() => getActiveSkillQuery(text, cursorPosition), [cursorPosition, text]);
+
+  const skillSuggestions = useMemo(
+    () => filterSkillSuggestions(skills, activeSkillQuery?.query ?? ""),
+    [activeSkillQuery?.query, skills],
+  );
+
+  const mentionedSkills = useMemo(() => resolveMentionedSkills(text, skills), [skills, text]);
+
+  useEffect(() => {
+    setHighlightedSkillIndex(0);
+  }, [activeSkillQuery?.query, text, selectedCwd]);
+
+  useEffect(() => {
+    if (highlightedSkillIndex < skillSuggestions.length) {
+      return;
+    }
+    setHighlightedSkillIndex(0);
+  }, [highlightedSkillIndex, skillSuggestions.length]);
+
   const focusControl = (control: "model" | "effort" | "cwd" | "approval" | "personality") => {
     setShowControls(true);
     setActiveControl(control);
@@ -158,6 +273,27 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
       if (target instanceof HTMLSelectElement) {
         target.click();
       }
+    });
+  };
+
+  const applySkillSuggestion = (skill: CodexSkillRecord) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    const cursor = textarea.selectionStart ?? text.length;
+    const activeQuery = getActiveSkillQuery(text, cursor);
+    if (!activeQuery) {
+      return;
+    }
+    const replacement = `$${skill.name} `;
+    const nextText = replaceTextRange(text, activeQuery.start, activeQuery.end, replacement);
+    const nextCursor = activeQuery.start + replacement.length;
+    setText(nextText);
+    setCursorPosition(nextCursor);
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
     });
   };
 
@@ -322,9 +458,42 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
         <div className={isMobile ? "space-y-2" : "grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"}>
           <div className="space-y-2">
             <textarea
+              ref={textareaRef}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => {
+                setText(event.target.value);
+                setCursorPosition(event.target.selectionStart ?? event.target.value.length);
+              }}
+              onClick={(event) => setCursorPosition(event.currentTarget.selectionStart ?? 0)}
+              onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart ?? 0)}
+              onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart ?? 0)}
               onKeyDown={(event) => {
+                if (skillSuggestions.length > 0 && activeSkillQuery) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setHighlightedSkillIndex((current) => (current + 1) % skillSuggestions.length);
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setHighlightedSkillIndex((current) => (current - 1 + skillSuggestions.length) % skillSuggestions.length);
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    if (!event.shiftKey) {
+                      event.preventDefault();
+                      applySkillSuggestion(skillSuggestions[highlightedSkillIndex] ?? skillSuggestions[0]);
+                      return;
+                    }
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setHighlightedSkillIndex(0);
+                    textareaRef.current?.blur();
+                    textareaRef.current?.focus();
+                    return;
+                  }
+                }
                 if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                   event.preventDefault();
                   void sendTurn();
@@ -333,9 +502,60 @@ export const ComposerBar = ({ embedded = false, isMobile = false }: { embedded?:
               placeholder="Build something..."
               className={`${isMobile ? "min-h-[56px] max-h-[32dvh] resize-none rounded-[18px] px-3.5 py-3 leading-5" : "min-h-[74px] rounded-[20px] px-4 py-3 leading-6"} w-full border border-white/8 bg-white/[0.025] text-[15px]`}
             />
+            {(skillSuggestions.length > 0 && activeSkillQuery) ? (
+              <div className="rounded-[18px] border border-white/8 bg-[#0a0f1a] p-2 shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
+                <div className="px-2 pb-2 text-[11px] uppercase tracking-[0.16em] text-slate-500">
+                  Skills
+                </div>
+                <div className="space-y-1">
+                  {skillSuggestions.map((skill, index) => (
+                    <button
+                      key={`${skill.scope}:${skill.path}`}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applySkillSuggestion(skill);
+                      }}
+                      className={`flex w-full items-start justify-between gap-3 rounded-[14px] px-3 py-2 text-left transition ${index === highlightedSkillIndex ? "bg-white/10 text-slate-50" : "bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{skill.name}</div>
+                        <div className="truncate text-xs text-slate-500">{skill.summary || skill.id}</div>
+                      </div>
+                      <div className="shrink-0 rounded-full border border-white/8 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-400">
+                        {skill.scope}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {(mentionedSkills.length > 0 || skillsError) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {mentionedSkills.length > 0 ? (
+                  <>
+                    <span className="text-xs text-slate-500">Skills</span>
+                    {mentionedSkills.map((skill) => (
+                      <span
+                        key={`${skill.scope}:${skill.path}`}
+                        className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100"
+                      >
+                        {`$${skill.name}`}
+                      </span>
+                    ))}
+                  </>
+                ) : null}
+                {!mentionedSkills.length && skillsError ? (
+                  <span className="text-xs text-amber-300/80">
+                    Skill index unavailable
+                  </span>
+                ) : null}
+              </div>
+            )}
             <div className={`flex flex-wrap items-center gap-2 text-slate-500 ${isMobile ? "text-[11px]" : "text-xs"}`}>
               <span>{selectedThread ? "Reply in this conversation" : "Send starts a new conversation"}</span>
               {activeTurnId && <span>{debug.debugMode ? `Active turn ${activeTurnId.slice(0, 8)}` : "Generating"}</span>}
+              {mentionedSkills.length > 0 && <span>{`Will mention ${mentionedSkills.length} skill${mentionedSkills.length > 1 ? "s" : ""}`}</span>}
             </div>
           </div>
 

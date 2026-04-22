@@ -185,6 +185,8 @@ const bodyPreview = (item: ItemRecord, maxLength = 140): string => {
   return compactText(body, maxLength);
 };
 
+const hasRenderableBody = (item: ItemRecord): boolean => extractItemBody(item).trim().length > 0;
+
 const approvalCountLabel = (count: number, status: "pending" | "resolved"): string =>
   `${count} ${status} approval${count === 1 ? "" : "s"}`;
 
@@ -634,10 +636,16 @@ const GenericItemEntry = ({
 
         {open && (
           <div className="mt-3 space-y-3">
-            <pre className="mono-panel scrollbar max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
-              {extractItemBody(item)}
-              {running && <StreamingCursor />}
-            </pre>
+            {hasRenderableBody(item) ? (
+              <pre className="mono-panel scrollbar max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-[16px] p-3 font-mono text-xs text-slate-100">
+                {extractItemBody(item)}
+                {running && <StreamingCursor />}
+              </pre>
+            ) : (
+              <div className="note-panel rounded-[16px] p-3 text-xs">
+                No reasoning text was exposed for this item. Some turns only provide an empty reasoning shell or a summary-less record.
+              </div>
+            )}
             {debug.showRawEventControls && (
               <details className="rounded-[14px] bg-white/[0.03] px-3 py-2">
                 <summary className="cursor-pointer list-none text-[11px] uppercase tracking-[0.16em] text-slate-500">Raw payload</summary>

@@ -77,6 +77,8 @@ export interface ItemRecord {
     agentText: string;
     commandOutput: string;
     fileChangeOutput: string;
+    reasoningText: string;
+    reasoningSummary: string;
   };
   renderedText: string;
   finalStatus: string;
@@ -226,7 +228,7 @@ export interface ItemDeltaEvent {
   threadId: string;
   turnId: string;
   itemId: string;
-  stream: "agentText" | "commandOutput" | "fileChangeOutput";
+  stream: "agentText" | "commandOutput" | "fileChangeOutput" | "reasoningText" | "reasoningSummary";
   delta: string;
 }
 
@@ -508,7 +510,7 @@ const deriveRenderedText = (item: Record<string, unknown>, aggregated: ItemRecor
     return String(item.text ?? "");
   }
   if (itemType === "reasoning") {
-    return joinStringArray(item.content) || joinStringArray(item.summary);
+    return joinStringArray(item.content) || aggregated.reasoningText || joinStringArray(item.summary) || aggregated.reasoningSummary;
   }
   if (itemType === "webSearch") {
     return [typeof item.query === "string" ? `Query: ${item.query}` : "", renderWebSearchAction(item.action)]
@@ -656,6 +658,8 @@ const upsertItem = (
           agentText: "",
           commandOutput: "",
           fileChangeOutput: "",
+          reasoningText: "",
+          reasoningSummary: "",
         },
         renderedText: "",
         finalStatus: deriveItemFinalStatus(rawItem, completed),

@@ -20,6 +20,18 @@ export const fetchRuntime = async <T>(): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
+export const fetchCodexContext = async <T>(cwd?: string | null): Promise<T> => {
+  const params = new URLSearchParams();
+  if (cwd) {
+    params.set("cwd", cwd);
+  }
+  const response = await fetch(`/api/context${params.size > 0 ? `?${params.toString()}` : ""}`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json() as Promise<T>;
+};
+
 export const exportThreadEvents = async (threadId: string): Promise<void> => {
   const response = await fetch(`/api/threads/${threadId}/export`);
   if (!response.ok) {
@@ -33,4 +45,3 @@ export const exportThreadEvents = async (threadId: string): Promise<void> => {
   anchor.click();
   URL.revokeObjectURL(url);
 };
-

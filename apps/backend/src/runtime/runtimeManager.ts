@@ -584,6 +584,42 @@ export class RuntimeManager {
           },
         ]);
         return;
+      case "item/reasoning/textDelta":
+        this.applyEvents([
+          {
+            type: "item/delta",
+            threadId: String((message.params as { threadId: string }).threadId),
+            turnId: String((message.params as { turnId: string }).turnId),
+            itemId: String((message.params as { itemId: string }).itemId),
+            stream: "reasoningText",
+            delta: String((message.params as { delta: string }).delta),
+          },
+        ]);
+        return;
+      case "item/reasoning/summaryTextDelta":
+        this.applyEvents([
+          {
+            type: "item/delta",
+            threadId: String((message.params as { threadId: string }).threadId),
+            turnId: String((message.params as { turnId: string }).turnId),
+            itemId: String((message.params as { itemId: string }).itemId),
+            stream: "reasoningSummary",
+            delta: String((message.params as { delta: string }).delta),
+          },
+        ]);
+        return;
+      case "item/reasoning/summaryPartAdded":
+        this.applyEvents([
+          {
+            type: "item/delta",
+            threadId: String((message.params as { threadId: string }).threadId),
+            turnId: String((message.params as { turnId: string }).turnId),
+            itemId: String((message.params as { itemId: string }).itemId),
+            stream: "reasoningSummary",
+            delta: "\n\n",
+          },
+        ]);
+        return;
       case "command/exec/outputDelta": {
         const params = message.params as { processId: string; stream: "stdout" | "stderr"; deltaBase64: string; capReached: boolean };
         const decoded = Buffer.from(params.deltaBase64, "base64").toString("utf8");

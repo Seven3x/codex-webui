@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { WebSocket, WebSocketServer } from "ws";
+import { readCodexContext } from "./context/readCodexContext.js";
 import { ensureRuntimeDirs, appConfig } from "./config.js";
 import { logger } from "./logger.js";
 import { RuntimeManager } from "./runtime/runtimeManager.js";
@@ -18,6 +19,11 @@ const main = async (): Promise<void> => {
   }));
 
   app.get("/api/runtime", async () => runtime.getSnapshot());
+
+  app.get("/api/context", async (request) => {
+    const query = request.query as { cwd?: string };
+    return readCodexContext(typeof query.cwd === "string" && query.cwd.trim().length > 0 ? query.cwd : null);
+  });
 
   app.get("/api/threads/:threadId/export", async (request, reply) => {
     const params = request.params as { threadId: string };
